@@ -1,9 +1,14 @@
 const std = @import("std");
 const PostParser = @import("../PostParser.zig");
 const MetaNode = @import("../element/MetaNode.zig");
+const Node = @import("../element/Node.zig");
 
 pub const SemanticError = error{
     ImpossibleListNesting,
+};
+
+pub const rules = [_]PostParser.Rule{
+    .{ .nodetrigger = .{ .L0 = .Item }, .func = unordered_list_wrap },
 };
 
 fn spush_node(p: *PostParser, k: MetaNode.Kind, before_node: usize) void {

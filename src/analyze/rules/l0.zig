@@ -5,6 +5,16 @@ const Node = @import("../element/Node.zig");
 const Parser = @import("../Parser.zig");
 const ParsingError = Parser.ParsingError;
 
+// every func that is here registered is not required to have the cursor on some position afterwards
+pub const rules = [_]Parser.Rule{
+    .{
+        .func = par, // default
+    },
+    .{ .trigger = '#', .func = heading },
+    .{ .trigger = '-', .func = items },
+    .{ .trigger = '!', .func = attributes, .rescan_for_l1 = false },
+};
+
 const AttributeSyntaxError = error{
     MissingBang,
     EmptyKey,

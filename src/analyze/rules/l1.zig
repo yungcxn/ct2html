@@ -5,6 +5,14 @@ const Node = @import("../element/Node.zig");
 const Parser = @import("../Parser.zig");
 const ParsingError = Parser.ParsingError;
 
+// every func here IS required to have the cursor moved on some non-to-scan position afterwards
+pub const rules = [_]Parser.Rule{
+    .{ .trigger = '*', .func = bold_italic_both },
+    .{ .trigger = '_', .func = st_stb_sti_all }, // strikethrough, bold, italic, all
+    .{ .trigger = '`', .func = inline_code },
+    // .{ .trigger = '@', .func = l1_parse.command },
+};
+
 pub const SyntaxError = error{
     NotEnoughAsterisks,
     NotEnoughUnderlines,

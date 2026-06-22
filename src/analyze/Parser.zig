@@ -1,11 +1,20 @@
 const std = @import("std");
 const Node = @import("element/Node.zig");
 const Parser = @This();
-const ParseRule = @import("rule/ParseRule.zig");
+
+const rules_l0 = @import("rules/l0.zig");
+const rules_l1 = @import("rules/l1.zig");
+const SyntaxError = rules_l0.SyntaxError || rules_l1.SyntaxError;
 
 pub const ParsingError = error{
     InvalidSyntax,
     StopSignNotFound,
+};
+
+pub const Rule = struct {
+    trigger: ?u8 = null,
+    func: fn (*Parser, usize) SyntaxError!void,
+    rescan_for_l1: bool = true, // could l1 rules be applied in this rule block?, not for l1 rules
 };
 
 alloc: std.mem.Allocator,
@@ -39,7 +48,7 @@ pub fn error_handle(self: *@This(), err: anyerror) void {
 
 // assume cursor is at the start of the block, and blockend is the end of the block
 fn l0_parse_block(self: *@This(), endat: usize) bool { // returns if l1 rescan after rule
-    inline for (ParseRule.l0_rules[1..]) |rule| {
+    inline for (rules_l0.rules[1..]) |rule| {
         if (self.peek() == rule.trigger) {
             rule.func(self, endat) catch |err| {
                 self.error_handle(err);
@@ -48,10 +57,10 @@ fn l0_parse_block(self: *@This(), endat: usize) bool { // returns if l1 rescan a
         }
     }
 
-    ParseRule.l0_rules[0].func(self, endat) catch |err| {
+    rules_l0.rules[0].func(self, endat) catch |err| {
         self.error_handle(err);
     };
-    return ParseRule.l0_rules[0].rescan_for_l1;
+    return rules_l0.rules[0].rescan_for_l1;
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
@@ -59,7 +68,7 @@ fn l0_parse_block(self: *@This(), endat: usize) bool { // returns if l1 rescan a
 fn l1_parse_inblock(self: *@This(), blockend: usize) void {
     while (self.advance()) |c| {
         if (self.cursor >= blockend) break;
-        inline for (ParseRule.l1_rules) |rule| {
+        inline for (rules_l1.rules) |rule| {
             if (c == rule.trigger) {
                 rule.func(self, blockend) catch |err| {
                     self.error_handle(err);

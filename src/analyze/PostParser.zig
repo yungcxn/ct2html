@@ -1,9 +1,15 @@
 const std = @import("std");
+const PostParser = @This();
 const Parser = @import("Parser.zig");
-const PostParseRule = @import("rule/PostParseRule.zig");
 const Node = @import("element/Node.zig");
 const MetaNode = @import("element/MetaNode.zig");
-const SemanticError = @import("actions/postparse.zig").SemanticError;
+const rules_post = @import("rules/post.zig");
+const SemanticError = rules_post.SemanticError;
+
+pub const Rule = struct {
+    nodetrigger: Node.Kind,
+    func: fn (*PostParser) SemanticError!void, // usize: idx of the node
+};
 
 alloc: std.mem.Allocator,
 nodes: []Node,
@@ -52,7 +58,7 @@ pub fn build_metanodes(self: *@This()) void {
     while (self.nodecursor < self.nodec) : (self.nodecursor += 1) {
         const node = self.nodes[self.nodecursor];
         var rule_applied = false;
-        inline for (comptime PostParseRule.rules) |rule| {
+        inline for (comptime rules_post.rules) |rule| {
             if (std.meta.eql(node.kind, rule.nodetrigger) and !rule_applied) {
                 // the rule func is assumed to not touch the cursor
                 // except the case where it needs to consume +n nodes, e.g. +1
