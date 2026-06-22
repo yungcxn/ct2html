@@ -1,47 +1,27 @@
 const std = @import("std");
 const Parser = @import("../Parser.zig");
-const parse = @import("../actions/parse.zig");
-const SyntaxError = parse.SyntaxError;
+const l0_parse = @import("../actions/l0_parse.zig");
+const l1_parse = @import("../actions/l1_parse.zig");
 
-pub const RType = enum(c_uint) {
-    BlockStart = 0b001,
-    LineStart = 0b011,
-    Inline = 0b111,
-};
+const L0SyntaxError = l0_parse.SyntaxError;
+const L1SyntaxError = l1_parse.SyntaxError;
+
+pub const SyntaxError = L0SyntaxError || L1SyntaxError;
 
 trigger: ?u8 = null,
 func: fn (*Parser, usize) SyntaxError!void,
-ruletype: RType = RType.Inline,
 
-pub const rules = [_]@This(){
-    .{ .func = parse.par, .ruletype = RType.BlockStart },
-    .{ .trigger = '#', .func = parse.h1, .ruletype = RType.BlockStart },
-    .{ .trigger = '-', .func = parse.items, .ruletype = RType.BlockStart },
-    .{ .trigger = '!', .func = parse.attribute, .ruletype = RType.LineStart },
+pub const l0_rules = [_]@This(){
+    .{
+        .func = l0_parse.par, // default
+    },
+    .{ .trigger = '#', .func = l0_parse.heading },
+    .{ .trigger = '-', .func = l0_parse.items },
+    .{ .trigger = '!', .func = l0_parse.attributes },
 };
 
-// without default rule
-pub fn rules_by_ruletype(
-    comptime ruletype: RType,
-) []const @This() {
-    const rt_int = @intFromEnum(ruletype);
-    comptime var rs: []const @This() = &.{};
-    inline for (rules) |rule| {
-        if (rule.trigger != null and (@intFromEnum(rule.ruletype) & rt_int) != 0) {
-            rs = rs ++ &[_]@This(){rule};
-        }
-    }
-    return rs;
-}
-
-pub fn default_rule_by_ruletype(
-    comptime ruletype: RType,
-) ?@This() {
-    const rt_int = @intFromEnum(ruletype);
-    inline for (rules) |rule| {
-        if (rule.trigger == null and (@intFromEnum(rule.ruletype) & rt_int) != 0) {
-            return rule;
-        }
-    }
-    return null;
-}
+pub const l1_rules = [_]@This(){
+    // .{ .trigger = '*', .func = l1_parse.bold },
+    // .{ .trigger = '_', .func = l1_parse.italic },
+    // .{ .trigger = '@', .func = l1_parse.command },
+};

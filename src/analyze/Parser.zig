@@ -11,84 +11,69 @@ pub const ParsingError = error{
 alloc: std.mem.Allocator,
 text: []const u8,
 cursor: usize,
-nodes_l0: []Node,
-nodes_l1: []Node,
-nodeshead_l0: usize,
-nodeshead_l1: usize,
+nodes: []Node,
+nodeshead: usize,
 
 pub fn init(alloc: std.mem.Allocator, text: []const u8) !@This() {
     return .{
         .alloc = alloc,
         .text = text,
         .cursor = 0,
-        .nodes_l0 = try alloc.alloc(Node, 4096),
-        .nodes_l1 = try alloc.alloc(Node, 4096),
-        .nodeshead_l0 = 0,
-        .nodeshead_l1 = 0,
+        .nodes = try alloc.alloc(Node, 4096),
+        .nodeshead = 0,
     };
 }
 
 pub fn deinit(self: @This()) void {
-    self.alloc.free(self.nodes_l0);
-    self.alloc.free(self.nodes_l1);
+    self.alloc.free(self.nodes);
 }
 
-fn error_handle(self: *@This(), err: anyerror) ParsingError {
+pub fn error_handle(self: *@This(), err: anyerror) void {
     std.log.err("cursor={d}: Error parsing rule: {s}", .{ self.cursor, @errorName(err) });
     if (self.find_line_bounds()) |b| {
         const text = self.text[b.lbound..b.rbound];
         std.log.err("[in-line]: {s}", .{text});
     }
-    return ParsingError.InvalidSyntax;
+    std.process.exit(1);
 }
 
-fn parse_ruletyped_unit(
-    self: *@This(),
-    comptime ruletype: ParseRule.RType,
-    endat: usize,
-) ParsingError!void {
-    inline for (comptime ParseRule.rules_by_ruletype(ruletype)) |rule| {
+// assume cursor is at the start of the block, and blockend is the end of the block
+fn l0_parse_block(self: *@This(), endat: usize) void {
+    inline for (ParseRule.l0_rules[1..]) |rule| {
         if (self.peek() == rule.trigger) {
             return rule.func(self, endat) catch |err| {
-                return self.error_handle(err);
+                self.error_handle(err);
             };
         }
     }
-    const def_rule = ParseRule.default_rule_by_ruletype(ruletype) orelse return;
-    return def_rule.func(self, endat) catch |err| {
-        return self.error_handle(err);
+
+    return ParseRule.l0_rules[0].func(self, endat) catch |err| {
+        self.error_handle(err);
     };
 }
 
-fn parse_block(self: *@This(), endat: usize) ParsingError!void {
-    return parse_ruletyped_unit(self, .BlockStart, endat);
-}
-
-fn parse_line(self: *@This(), endat: usize) ParsingError!void {
-    return parse_ruletyped_unit(self, .LineStart, endat);
-}
-
-fn parse_inline(self: *@This(), endat: usize) ParsingError!void {
-    while (self.cursor < endat) {
-        const before = self.cursor;
-        try parse_ruletyped_unit(self, .Inline, endat);
-        if (self.cursor <= before) {
-            self.cursor = endat;
-            return;
+// assume cursor is at the start of the block, and blockend is the end of the block
+fn l1_parse_inblock(self: *@This(), blockend: usize) void {
+    while (self.advance()) |c| {
+        if (self.cursor >= blockend) break;
+        var rule_applied = false;
+        inline for (ParseRule.l1_rules) |rule| {
+            if (c == rule.trigger and !rule_applied) {
+                rule.func(self, blockend) catch |err| {
+                    self.error_handle(err);
+                };
+                rule_applied = true;
+            }
         }
     }
 }
 
-pub fn build_nodes(self: *@This()) ParsingError!void {
+pub fn build_nodes(self: *@This()) void {
     while (self.find_blockend()) |blockend| {
-        try self.parse_block(blockend);
-
-        while (self.find_lineend(blockend)) |lineend| {
-            try self.parse_line(lineend);
-            try self.parse_inline(lineend);
-            self.skip_newline();
-        }
-
+        const cursor_before = self.cursor;
+        self.l0_parse_block(blockend);
+        self.cursor = cursor_before;
+        self.l1_parse_inblock(blockend);
         self.cursor = blockend;
         self.skip_newline();
         self.skip_newline();
@@ -97,28 +82,25 @@ pub fn build_nodes(self: *@This()) ParsingError!void {
 
 pub fn debug_print(self: @This()) void {
     std.debug.print("L0 Nodes:\n", .{});
-    for (self.nodes_l0[0..self.nodeshead_l0], 0..) |node, idx| {
+    for (self.nodes[0..self.nodeshead], 0..) |node, idx| {
         const text = self.text[node.textstart..node.textend];
-        std.debug.print("{d}: {any}\n   [{s}]\n\n", .{ idx, node.kind, text });
-    }
-    std.debug.print("L1 Nodes:\n", .{});
-    for (self.nodes_l1[0..self.nodeshead_l1], 0..) |node, idx| {
-        const text = self.text[node.textstart..node.textend];
-        std.debug.print("{d}: {any}\n   [{s}]\n\n", .{ idx, node.kind, text });
+        std.debug.print(
+            "{d}: {any} - {s}\n   [{s}]\n\n",
+            .{ idx, node.kind, @tagName(node.kind), text },
+        );
     }
 }
 
 pub fn push_node(self: *@This(), node: Node) void {
-    switch (node.kind) {
-        .L0 => {
-            self.nodes_l0[self.nodeshead_l0] = node;
-            self.nodeshead_l0 += 1;
-        },
-        .L1 => {
-            self.nodes_l1[self.nodeshead_l1] = node;
-            self.nodeshead_l1 += 1;
-        },
+    if (self.nodeshead >= self.nodes.len) {
+        const newlen = self.nodes.len * 2;
+        const newnodes = self.alloc.realloc(self.nodes, newlen) catch |err| {
+            return self.error_handle(err);
+        };
+        self.nodes = newnodes;
     }
+    self.nodes[self.nodeshead] = node;
+    self.nodeshead += 1;
 }
 
 pub fn peek(self: *@This()) ?u8 {

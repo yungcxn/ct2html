@@ -5,13 +5,22 @@ pub const KindLevel0 = enum(u8) {
     AttributeValue,
 
     Heading1,
+    Heading2,
+    Heading3,
+    Heading4,
+    Heading5,
+    Heading6,
     Paragraph,
     Item,
 };
 
 pub const KindLevel1 = enum(u8) {
+    CommandKey,
+    CommandValue,
+
     Bold,
     Italic,
+    InlineCode,
 };
 
 pub const Kind = union(enum) {

@@ -58,17 +58,17 @@ pub fn main(init: std.process.Init) void {
     var parser = Parser.init(arena.allocator(), text) catch |err| crash(err);
     defer parser.deinit();
 
-    parser.build_nodes() catch |err| crash(err);
+    parser.build_nodes();
     parser.debug_print();
 
     var postparser = PostParser.init(
         arena.allocator(),
-        parser.nodes_l0,
-        parser.nodeshead_l0,
+        parser.nodes,
+        parser.nodeshead,
     ) catch |err| crash(err);
     defer postparser.deinit();
 
-    postparser.build_metanodes() catch |err| crash(err);
+    postparser.build_metanodes();
     postparser.debug_print();
 
     // out_file.writeStreamingAll(io, transformed_text) catch |err| crash(err);

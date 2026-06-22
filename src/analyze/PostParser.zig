@@ -31,20 +31,36 @@ pub fn deinit(self: @This()) void {
     self.alloc.free(self.metanodes);
 }
 
+pub fn error_handle(self: *@This(), err: anyerror) void {
+    std.log.err("nodecursor={d}: Error parsing node: {s}", .{ self.nodecursor, @errorName(err) });
+    std.process.exit(1);
+}
+
 pub fn push_metanode(self: *@This(), node: MetaNode) void {
+    if (self.metanodeshead >= self.metanodes.len) {
+        const newlen = self.metanodes.len * 2;
+        const newmetanodes = self.alloc.realloc(self.metanodes, newlen) catch |err| {
+            return self.error_handle(err);
+        };
+        self.metanodes = newmetanodes;
+    }
     self.metanodes[self.metanodeshead] = node;
     self.metanodeshead += 1;
 }
 
-pub fn build_metanodes(self: *@This()) SemanticError!void {
+pub fn build_metanodes(self: *@This()) void {
     while (self.nodecursor < self.nodec) : (self.nodecursor += 1) {
         const node = self.nodes[self.nodecursor];
+        var rule_applied = false;
         inline for (comptime PostParseRule.rules) |rule| {
-            if (std.meta.eql(node.kind, rule.nodetrigger)) {
+            if (std.meta.eql(node.kind, rule.nodetrigger) and !rule_applied) {
                 // the rule func is assumed to not touch the cursor
                 // except the case where it needs to consume +n nodes, e.g. +1
                 // then it needs to move the cursor by +1, => +n
-                try rule.func(self);
+                rule.func(self) catch |err| {
+                    self.error_handle(err);
+                };
+                rule_applied = true;
             }
         }
     }

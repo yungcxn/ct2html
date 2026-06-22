@@ -1,11 +1,17 @@
 const std = @import("std");
 const PostParser = @import("../PostParser.zig");
 const MetaNode = @import("../element/MetaNode.zig");
-const NodeKind = @import("../element/Node.zig").Kind;
 
 pub const SemanticError = error{
     ImpossibleListNesting,
 };
+
+fn spush_node(p: *PostParser, k: MetaNode.Kind, before_node: usize) void {
+    p.push_metanode(.{
+        .kind = k,
+        .before_node = before_node,
+    });
+}
 
 pub fn unordered_list_wrap(p: *PostParser) SemanticError!void {
     const first_item_idx = p.nodecursor;
@@ -16,12 +22,6 @@ pub fn unordered_list_wrap(p: *PostParser) SemanticError!void {
     // first iter always true: atleast 1 increment => correct
     // break means out of node array, if item node was last => also correct
 
-    p.push_metanode(.{
-        .kind = .ItemListClose,
-        .before_node = first_item_idx,
-    });
-    p.push_metanode(.{
-        .kind = .ItemListOpen,
-        .before_node = p.nodecursor,
-    });
+    spush_node(p, .ItemListClose, first_item_idx);
+    spush_node(p, .ItemListOpen, p.nodecursor);
 }
