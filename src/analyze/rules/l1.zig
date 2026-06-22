@@ -10,14 +10,20 @@ pub const rules = [_]Parser.Rule{
     .{ .trigger = '*', .func = bold_italic_both },
     .{ .trigger = '_', .func = st_stb_sti_all }, // strikethrough, bold, italic, all
     .{ .trigger = '`', .func = inline_code },
-    // .{ .trigger = '@', .func = l1_parse.command },
+    .{ .trigger = '@', .func = command },
+};
+
+pub const CommandSyntaxError = error{
+    MissingCommandName,
+    SpaceBeforeCommandNameNotAllowed,
+    MissingCommandArg,
 };
 
 pub const SyntaxError = error{
     NotEnoughAsterisks,
     NotEnoughUnderlines,
     InlineCodeBacktick2NotFound,
-};
+} || CommandSyntaxError;
 
 fn spush_node(p: *Parser, k: Node.KindLevel1, textstart: usize, textend: usize) void {
     p.push_node(.{
@@ -98,4 +104,23 @@ pub fn st_stb_sti_all(p: *Parser, endat: usize) SyntaxError!void {
 
 pub fn inline_code(p: *Parser, endat: usize) SyntaxError!void {
     try capture_for(p, '`', .InlineCode, endat, SyntaxError.InlineCodeBacktick2NotFound);
+}
+
+pub fn command(p: *Parser, endat: usize) SyntaxError!void {
+    // we only accept commands of type @key(arg), while having cursor on @
+    const name_start = p.cursor;
+    while (p.advance()) |c| {
+        if (c == '(') break;
+        if (Parser.is_whitesp(c)) return CommandSyntaxError.SpaceBeforeCommandNameNotAllowed;
+    }
+    if (p.cursor >= endat or name_start == p.cursor) return CommandSyntaxError.MissingCommandName;
+    // cursor is +1 of '(', so we exclusively add the command name
+    spush_node(p, .CommandKey, name_start, p.cursor - 1);
+    const arg_start = p.cursor;
+    while (p.advance()) |c| {
+        if (c == ')') break;
+    }
+    if (p.cursor >= endat or arg_start == p.cursor) return CommandSyntaxError.MissingCommandArg;
+    // cursor is +1 of ')', so we exclusively add the command arg
+    spush_node(p, .CommandValue, arg_start, p.cursor - 1);
 }
