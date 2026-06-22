@@ -2,6 +2,8 @@ const std = @import("std");
 const filex = @import("filex.zig");
 const argx = @import("argx.zig");
 const Logger = @import("Logger.zig");
+const Parser = @import("analyze/Parser.zig");
+const PostParser = @import("analyze/PostParser.zig");
 
 pub var manualloc: std.mem.Allocator = undefined;
 pub var arena: std.heap.ArenaAllocator = undefined;
@@ -9,7 +11,7 @@ pub var io: std.Io = undefined;
 pub var logger: Logger = undefined;
 
 fn crash(err: anyerror) noreturn {
-    logger.printf("Error: {s}\n", .{@errorName(err)});
+    std.log.err("{s}", .{@errorName(err)});
     std.process.exit(1);
 }
 
@@ -35,7 +37,9 @@ pub fn main(init: std.process.Init) void {
     defer arena.deinit();
     logger = Logger{ .io = io, .arena = &arena };
 
-    const argslice = init.minimal.args.toSlice(arena.allocator()) catch |err| crash(err);
+    const argslice = init.minimal.args.toSlice(
+        arena.allocator(),
+    ) catch |err| crash(err);
 
     const args = argx.parse(argdef, argslice);
 
@@ -45,9 +49,27 @@ pub fn main(init: std.process.Init) void {
     const out_file = filex.safeopen(io, args.out);
     defer filex.close(io, out_file);
 
-    const text: []u8 = filex.alloc_filetext(arena.allocator(), io, in_file) catch |err| crash(err);
+    const text: []u8 = filex.alloc_filetext(
+        arena.allocator(),
+        io,
+        in_file,
+    ) catch |err| crash(err);
 
-    const transformed_text = text; // TODO
+    var parser = Parser.init(arena.allocator(), text) catch |err| crash(err);
+    defer parser.deinit();
 
-    out_file.writeStreamingAll(io, transformed_text) catch |err| crash(err);
+    parser.build_nodes() catch |err| crash(err);
+    parser.debug_print();
+
+    var postparser = PostParser.init(
+        arena.allocator(),
+        parser.nodes_l0,
+        parser.nodeshead_l0,
+    ) catch |err| crash(err);
+    defer postparser.deinit();
+
+    postparser.build_metanodes() catch |err| crash(err);
+    postparser.debug_print();
+
+    // out_file.writeStreamingAll(io, transformed_text) catch |err| crash(err);
 }
