@@ -5,8 +5,8 @@ const SyntaxError = parse.SyntaxError;
 
 pub const RType = enum(c_uint) {
     BlockStart = 0b001,
-    LineStart = 0b010,
-    Inline = 0b100,
+    LineStart = 0b011,
+    Inline = 0b111,
 };
 
 trigger: ?u8 = null,
@@ -17,6 +17,7 @@ pub const rules = [_]@This(){
     .{ .func = parse.par, .ruletype = RType.BlockStart },
     .{ .trigger = '#', .func = parse.h1, .ruletype = RType.BlockStart },
     .{ .trigger = '-', .func = parse.items, .ruletype = RType.BlockStart },
+    .{ .trigger = '!', .func = parse.attribute, .ruletype = RType.LineStart },
 };
 
 // without default rule

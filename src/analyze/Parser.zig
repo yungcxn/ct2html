@@ -101,7 +101,7 @@ pub fn debug_print(self: @This()) void {
         const text = self.text[node.textstart..node.textend];
         std.debug.print("{d}: {any}\n   [{s}]\n\n", .{ idx, node.kind, text });
     }
-    std.debug.print("L1 Nodes\n", .{});
+    std.debug.print("L1 Nodes:\n", .{});
     for (self.nodes_l1[0..self.nodeshead_l1], 0..) |node, idx| {
         const text = self.text[node.textstart..node.textend];
         std.debug.print("{d}: {any}\n   [{s}]\n\n", .{ idx, node.kind, text });
@@ -142,8 +142,22 @@ pub fn is_whitesp(c: u8) bool {
     return c == '\n' or c == '\t' or c == ' ' or c == '\r';
 }
 
+pub fn at_whitesp(self: *@This()) bool {
+    const c = self.peek() orelse return false;
+    return is_whitesp(c);
+}
+
 pub fn skip_whitesp(self: *@This()) bool {
     while (self.peek()) |c| {
+        if (!is_whitesp(c)) return true;
+        self.cursor += 1;
+    }
+    return false;
+}
+
+pub fn skip_whitesp_until(self: *@This(), endat: usize) bool {
+    while (self.peek()) |c| {
+        if (self.cursor >= endat) return false;
         if (!is_whitesp(c)) return true;
         self.cursor += 1;
     }

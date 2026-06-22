@@ -1,6 +1,9 @@
 const std = @import("std");
 
 pub const KindLevel0 = enum(u8) {
+    AttributeKey,
+    AttributeValue,
+
     Heading1,
     Paragraph,
     Item,
