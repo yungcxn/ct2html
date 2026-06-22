@@ -18,9 +18,16 @@ pub const KindLevel1 = enum(u8) {
     CommandKey,
     CommandValue,
 
+    InlineCode,
+
     Bold,
     Italic,
-    InlineCode,
+    BoldItalic,
+
+    Strikethrough,
+    StrikethroughBold,
+    StrikethroughItalic,
+    StrikethroughBoldItalic,
 };
 
 pub const Kind = union(enum) {

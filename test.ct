@@ -1,10 +1,18 @@
 !key:value
 !otherkey:othervalue
 
+Here is some *bold-containing* text, and some **italic-containing** txt.
+***both***,
+and **multi-line-
+--italic**.
+
+How about some _strikethrough_ text, and some __strikethrough-bold__ text?
+and some __strikethrough-italic__ text, and some ___strikethough-bold-italic___ text?
+
 # Hi  
 
 This is some example 
-text, where I'd like to show
+text, where I'd like to show my `inline code` -- and
 how my blocks work.
 
 This is the next block.

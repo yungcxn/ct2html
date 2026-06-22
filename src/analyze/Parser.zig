@@ -38,31 +38,32 @@ pub fn error_handle(self: *@This(), err: anyerror) void {
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
-fn l0_parse_block(self: *@This(), endat: usize) void {
+fn l0_parse_block(self: *@This(), endat: usize) bool { // returns if l1 rescan after rule
     inline for (ParseRule.l0_rules[1..]) |rule| {
         if (self.peek() == rule.trigger) {
-            return rule.func(self, endat) catch |err| {
+            rule.func(self, endat) catch |err| {
                 self.error_handle(err);
             };
+            return rule.rescan_for_l1;
         }
     }
 
-    return ParseRule.l0_rules[0].func(self, endat) catch |err| {
+    ParseRule.l0_rules[0].func(self, endat) catch |err| {
         self.error_handle(err);
     };
+    return ParseRule.l0_rules[0].rescan_for_l1;
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
+// but cursor must be preserved after each func since it may move if the rule needs the cursor to
 fn l1_parse_inblock(self: *@This(), blockend: usize) void {
     while (self.advance()) |c| {
         if (self.cursor >= blockend) break;
-        var rule_applied = false;
         inline for (ParseRule.l1_rules) |rule| {
-            if (c == rule.trigger and !rule_applied) {
+            if (c == rule.trigger) {
                 rule.func(self, blockend) catch |err| {
                     self.error_handle(err);
                 };
-                rule_applied = true;
             }
         }
     }
@@ -71,22 +72,23 @@ fn l1_parse_inblock(self: *@This(), blockend: usize) void {
 pub fn build_nodes(self: *@This()) void {
     while (self.find_blockend()) |blockend| {
         const cursor_before = self.cursor;
-        self.l0_parse_block(blockend);
-        self.cursor = cursor_before;
-        self.l1_parse_inblock(blockend);
-        self.cursor = blockend;
+        if (self.l0_parse_block(blockend)) { // rescan for l1
+            self.cursor = cursor_before; // restart the block scanning now
+            self.l1_parse_inblock(blockend);
+            self.cursor = blockend;
+        }
         self.skip_newline();
         self.skip_newline();
     }
 }
 
 pub fn debug_print(self: @This()) void {
-    std.debug.print("L0 Nodes:\n", .{});
+    std.debug.print("Nodes:\n", .{});
     for (self.nodes[0..self.nodeshead], 0..) |node, idx| {
         const text = self.text[node.textstart..node.textend];
         std.debug.print(
-            "{d}: {any} - {s}\n   [{s}]\n\n",
-            .{ idx, node.kind, @tagName(node.kind), text },
+            "{d}: {any}\n   [{s}]\n\n",
+            .{ idx, node.kind, text },
         );
     }
 }
@@ -146,7 +148,7 @@ pub fn skip_whitesp_until(self: *@This(), endat: usize) bool {
     return false;
 }
 
-pub fn mustfind_until(
+pub fn mustfind_until( // this function returns on cursor being ON STOPSET or parsing error
     self: *@This(),
     endat: usize,
     stopset: anytype,
