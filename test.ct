@@ -37,7 +37,8 @@ k
 o
 
 - My list
--Is really nice!
+-Is really nice! Multi-
+ line
 - Third Item
 
 The end before the end.
@@ -57,6 +58,21 @@ The end before the end.
 4. List starting at another number
 5.Another Number
 3. Going back, should this be allowed?
+
+1) other num
+2) again
+3) multi-
+   line
+
+A) some
+B) text
+
+a. more-
+   text
+b. e
+C. f
+yy.gh
+   ij
 
 
 

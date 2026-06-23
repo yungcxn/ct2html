@@ -45,12 +45,15 @@ const OrderedItemsSyntaxError = error{
     NothingAfterSep,
     NumberRegionNeverEnded,
     TextRegionEndedUnexpectedly,
+    NonDigitPreSepOnMultiline,
+    NonAlphaPreSepOnMultiline,
 };
 
 pub const SyntaxError = error{
     NewlineInHeading,
     TooSmallHeadingLevel,
     WrongAttributeFormat,
+    UnindentedLineAfterDashItem,
 } || AttributeSyntaxError || OrderedItemsSyntaxError;
 
 fn spush_node(p: *Parser, k: Node.KindLevel0, textstart: usize, textend: usize) void {
@@ -153,10 +156,16 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!void {
                 break :outer;
             }
 
-            if (c == '\n' and p.peek() == '-') {
-                spush_node(p, .DashItem, start, p.cursor - 1);
+            if (c == '\n') {
+                // we could proceed on ' ' or '\t'
+                const c_p = p.peek() orelse 0;
+                if (c_p == ' ' or c_p == '\t') continue;
 
-                // p.cursor is already on the '-'
+                // we have something unidented on this line, better let it be '-'
+                if (c_p != '-') return SyntaxError.UnindentedLineAfterDashItem;
+
+                // we end here on "\n-", with cursor on '-'
+                spush_node(p, .DashItem, start, p.cursor - 1);
                 continue :outer;
             }
         }
@@ -165,44 +174,65 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!void {
 }
 
 // this is special; cursor may be on 1-9, since we start on first line ->`1. text` or `5. text`
-fn labeled_items(
+fn ordered_items(
     p: *Parser,
     comptime isdigit: bool,
     sep: u8,
-    comptime itemlabelkind: Node.KindLevel0,
-    comptime itemtextkind: Node.KindLevel0,
-    comptime itemsentinelkind: Node.KindLevel0,
+    itemlabelkind: Node.KindLevel0,
+    itemtextkind: Node.KindLevel0,
+    itemsentinelkind: Node.KindLevel0,
     endat: usize,
 ) SyntaxError!void {
     outer: while (true) {
         const label_first = p.cursor;
-        while (true) : (p.cursor += 1) {
-            const c = p.text[p.cursor];
-            if (c == sep) break; // successful break
-            if (isdigit and !std.ascii.isDigit(c)) return OrderedItemsSyntaxError.NonDigitPreSep;
-            if (!isdigit and !std.ascii.isAlphabetic(c)) return OrderedItemsSyntaxError.NonAlphaPreSep;
-            if (p.cursor >= endat) return OrderedItemsSyntaxError.LabelRegionNeverEnded;
-        }
-        // we are on '.', so we can skip it and the following whitespace
-        const label_last = p.cursor - 1;
 
-        // now we have a valid number pre dot, so we push the node
-        spush_node(p, itemlabelkind, label_first, label_last + 1);
+        { // label
+            while (true) : (p.cursor += 1) {
+                const c = p.text[p.cursor];
+                if (c == sep) break; // successful break
 
-        p.cursor += 1;
-        if (!p.skip_whitesp()) return OrderedItemsSyntaxError.NothingAfterSep;
-        // now cursor is at first text letter
-        const text_start = p.cursor;
-        while (p.advance()) |c| {
-            if (p.cursor >= endat) { // last item, done
-                spush_node(p, itemtextkind, text_start, endat);
-                break :outer;
+                if (isdigit and !std.ascii.isDigit(c))
+                    return OrderedItemsSyntaxError.NonDigitPreSep;
+
+                if (!isdigit and !std.ascii.isAlphabetic(c))
+                    return OrderedItemsSyntaxError.NonAlphaPreSep;
+
+                if (p.cursor >= endat)
+                    return OrderedItemsSyntaxError.LabelRegionNeverEnded;
             }
+            // we are on '.', so we can skip it and the following whitespace
+            const label_last = p.cursor - 1;
 
-            const peeked: u8 = p.peek().?; // safe, checked before this
-            if (c == '\n' and peeked >= '0' and peeked <= '9') {
-                spush_node(p, itemtextkind, text_start, p.cursor - 1);
-                continue :outer;
+            // now we have a valid number pre dot, so we push the node
+            spush_node(p, itemlabelkind, label_first, label_last + 1);
+        }
+
+        { // text
+            p.cursor += 1;
+            if (!p.skip_whitesp())
+                return OrderedItemsSyntaxError.NothingAfterSep;
+
+            // now cursor is at first text letter
+            const text_start = p.cursor;
+            while (p.advance()) |c| {
+                if (p.cursor >= endat) { // last item, done
+                    spush_node(p, itemtextkind, text_start, endat);
+                    break :outer;
+                }
+
+                const peeked: u8 = p.peek().?; // safe, checked before this
+                if (c == '\n') {
+                    // continue if space or tab, else check if its valid label
+                    if (peeked == ' ' or peeked == '\t') continue;
+                    if (isdigit and !std.ascii.isDigit(peeked))
+                        return OrderedItemsSyntaxError.NonDigitPreSepOnMultiline;
+
+                    if (!isdigit and !std.ascii.isAlphabetic(peeked))
+                        return OrderedItemsSyntaxError.NonAlphaPreSepOnMultiline;
+
+                    spush_node(p, itemtextkind, text_start, p.cursor - 1);
+                    continue :outer;
+                }
             }
         }
         return OrderedItemsSyntaxError.TextRegionEndedUnexpectedly;
@@ -211,41 +241,52 @@ fn labeled_items(
 }
 
 pub fn num_items(p: *Parser, endat: usize) SyntaxError!void {
-    // first found sep after numbers decides which sep we use
-    var sep: u8 = 0;
-    while (p.advance()) |c| {
+    // the rule is: digit(s), then either '.' or ')', if anything wrong -> par
+    const c_safe = p.cursor;
+    var c = p.text[p.cursor];
+    while (true) : (p.cursor += 1) {
         if (c == '.' or c == ')') {
-            sep = c;
-            break;
+            p.cursor = c_safe;
+            return ordered_items(
+                p,
+                true,
+                c,
+                if (c == '.') .NumDotItemLabel else .NumParenItemLabel,
+                if (c == '.') .NumDotItemText else .NumParenItemText,
+                if (c == '.') .NumDotItemSentinel else .NumParenItemSentinel,
+                endat,
+            );
         }
-        if (!std.ascii.isDigit(c)) return OrderedItemsSyntaxError.NotANumberPreSep;
-        if (p.cursor >= endat) return OrderedItemsSyntaxError.NumberRegionNeverEnded;
+        if (!std.ascii.isDigit(c)) break;
+        c = p.peek() orelse break;
     }
-
-    try labeled_items(p, true, sep, .NumDotItemLabel, .NumDotItemText, .NumDotItemSentinel, endat);
+    p.cursor = c_safe;
+    return par(p, endat);
 }
 
 pub fn alph_items(p: *Parser, endat: usize) SyntaxError!void {
-    // the rule is: one alph, then either '.' or ')', if anything goes wrong -> just parse as par
+    // the rule is: one alph, then either '.' or ')', if anything wrong -> par
     const c_safe = p.cursor;
-    const first = p.advance() orelse {
+    blk: {
+        const first = p.advance() orelse break :blk;
+        if (!std.ascii.isAlphabetic(first)) break :blk;
+        const sep = p.advance() orelse break :blk;
+        if (sep != '.' and sep != ')') break :blk;
+
         p.cursor = c_safe;
-        return par(p, endat);
-    };
-    if (!std.ascii.isAlphabetic(first)) {
-        p.cursor = c_safe;
-        return par(p, endat);
-    }
-    const sep = p.advance() orelse {
-        p.cursor = c_safe;
-        return par(p, endat);
-    };
-    if (sep != '.' and sep != ')') {
-        p.cursor = c_safe;
-        return par(p, endat);
+        return ordered_items(
+            p,
+            false,
+            sep,
+            if (sep == '.') .AlphDotItemLabel else .AlphParenItemLabel,
+            if (sep == '.') .AlphDotItemText else .AlphParenItemText,
+            if (sep == '.') .AlphDotItemSentinel else .AlphParenItemSentinel,
+            endat,
+        );
     }
 
-    try labeled_items(p, false, sep, .AlphDotItemLabel, .AlphDotItemText, .AlphDotItemSentinel, endat);
+    p.cursor = c_safe;
+    return par(p, endat);
 }
 
 // default rule
