@@ -11,7 +11,25 @@ pub const KindLevel0 = enum(u8) {
     Heading5,
     Heading6,
     Paragraph,
-    Item,
+
+    DashItem,
+    DashItemSentinel, // sentinels are needed so that we do know when to separate two lists
+
+    NumDotItemLabel,
+    NumDotItemText,
+    NumDotItemSentinel,
+
+    NumParenItemLabel,
+    NumParenItemText,
+    NumParenItemSentinel,
+
+    AlphDotItemLabel,
+    AlphDotItemText,
+    AlphDotItemSentinel,
+
+    AlphParenItemLabel,
+    AlphParenItemText,
+    AlphParenItemSentinel,
 };
 
 pub const KindLevel1 = enum(u8) {

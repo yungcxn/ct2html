@@ -37,10 +37,28 @@ k
 o
 
 - My list
-- Is really nice!
+-Is really nice!
 - Third Item
 
 The end before the end.
+
+1. Numerical list
+
+1. Again 
+
+1. Usual list
+2. Item2
+3. Item Item *BoldItem* Item x
+   that goes also multiline? 
+   will this work?
+   I hope
+4. another item 
+
+4. List starting at another number
+5.Another Number
+3. Going back, should this be allowed?
+
+
 
 The end!
 

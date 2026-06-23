@@ -38,10 +38,21 @@ pub fn deinit(self: @This()) void {
 }
 
 pub fn error_handle(self: *@This(), err: anyerror) void {
-    std.log.err("cursor={d}: Error parsing rule: {s}", .{ self.cursor, @errorName(err) });
+    const line, const col = self.get_line_col();
+
+    std.log.err("in line {} (:{}) :: {s}", .{ line, col, @errorName(err) });
     if (self.find_line_bounds()) |b| {
         const text = self.text[b.lbound..b.rbound];
-        std.log.err("[in-line]: {s}", .{text});
+        std.log.err("[context]: {s}", .{text});
+        const pos = self.cursor - b.lbound;
+        const pos_marker = self.alloc.alloc(u8, pos + 1) catch {
+            std.log.err("Failed to alloc for pos_marker", .{});
+            std.process.exit(1);
+        };
+        defer self.alloc.free(pos_marker);
+        for (pos_marker) |*c| c.* = ' ';
+        pos_marker[pos] = '^';
+        std.log.err("           {s}", .{pos_marker});
     }
     std.process.exit(1);
 }
@@ -259,4 +270,18 @@ fn find_line_bounds(self: *@This()) ?struct {
     rbound = self.text.len;
     self.cursor = lbound;
     return .{ .lbound = lbound, .rbound = rbound };
+}
+
+fn get_line_col(self: *@This()) struct { usize, usize } {
+    var line: usize = 1;
+    var col: usize = 1;
+    for (self.text[0..self.cursor]) |c| {
+        if (c == '\n') {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    return .{ line, col };
 }
