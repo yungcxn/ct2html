@@ -2,8 +2,9 @@ const std = @import("std");
 const filex = @import("filex.zig");
 const argx = @import("argx.zig");
 const Logger = @import("Logger.zig");
-const Parser = @import("analyze/Parser.zig");
-const PostParser = @import("analyze/PostParser.zig");
+const Parser = @import("input/Parser.zig");
+const PostParser = @import("input/PostParser.zig");
+const Generator = @import("output/Generator.zig");
 
 pub var manualloc: std.mem.Allocator = undefined;
 pub var arena: std.heap.ArenaAllocator = undefined;
@@ -70,6 +71,21 @@ pub fn main(init: std.process.Init) void {
 
     postparser.build_metanodes();
     postparser.debug_print();
+
+    const outbuf = arena.allocator().alloc(u8, 4096) catch |err| crash(err);
+
+    var generator = Generator.init(
+        arena.allocator(),
+        text,
+        parser.nodes,
+        parser.nodeshead,
+        postparser.metanodes,
+        postparser.metanodeshead,
+        // need std.Io.Writer
+    ) catch |err| crash(err);
+    defer generator.deinit();
+
+    generator.print_out() catch |err| crash(err);
 
     // out_file.writeStreamingAll(io, transformed_text) catch |err| crash(err);
 }

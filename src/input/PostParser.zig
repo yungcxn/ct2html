@@ -72,6 +72,11 @@ pub fn build_metanodes(self: *@This()) void {
     }
 }
 
+pub fn peek_node(self: *@This()) ?Node {
+    if (self.nodecursor >= self.nodec) return null;
+    return self.nodes[self.nodecursor];
+}
+
 pub fn debug_print(self: @This()) void {
     std.debug.print("Metanodes:\n", .{});
     for (self.metanodes[0..self.metanodeshead]) |mn| {

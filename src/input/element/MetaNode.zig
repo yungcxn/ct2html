@@ -6,6 +6,8 @@ pub const Kind = enum(u8) {
 
     OrderedItemListOpen,
     OrderedItemListClose,
+
+    // todo these openers need to be typed for metadata...
 };
 
 kind: Kind,
