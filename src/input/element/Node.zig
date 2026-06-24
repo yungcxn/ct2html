@@ -1,8 +1,8 @@
 const std = @import("std");
 
 pub const KindLevel0 = enum(u8) {
-    AttributeKey,
-    AttributeValue,
+    AttributeStyle,
+    AttributeHeader,
 
     Heading1,
     Heading2,
@@ -33,8 +33,9 @@ pub const KindLevel0 = enum(u8) {
 };
 
 pub const KindLevel1 = enum(u8) {
-    CommandKey,
-    CommandValue,
+    CommandLink,
+    CommandImage,
+    CommandFigCaption,
 
     InlineCode,
 
@@ -61,6 +62,7 @@ pub const Kind = union(enum) {
     }
 
     pub fn is_l0(self: Kind) bool {
+        std.log.debug("is_l0: {any} for {any}", .{ std.meta.activeTag(self), self });
         return std.meta.activeTag(self) == .L0;
     }
 
@@ -72,6 +74,13 @@ pub const Kind = union(enum) {
             return self.L1 == other.L1;
         }
     }
+
+    pub fn name(self: Kind) []const u8 {
+        return switch (self) {
+            .L0 => |a| @tagName(a),
+            .L1 => |b| @tagName(b),
+        };
+    }
 };
 
 kind: Kind,
@@ -82,17 +91,3 @@ textend: usize,
 // we do not need children, if textstart and textend are in another node's
 // text range, then it is a child of that node. this way we can avoid
 // dynamic allocations for children lists.
-
-pub fn is_l0(n: @This()) bool {
-    return @TypeOf(n.kind) == KindLevel0;
-}
-
-fn is_kind(n: @This(), k: anytype) bool {
-    if (@TypeOf(k) == KindLevel0) {
-        return std.meta.eql(n.kind, .{ .L0 = k });
-    } else if (@TypeOf(k) == KindLevel1) {
-        return std.meta.eql(n.kind, .{ .L1 = k });
-    } else {
-        @compileError("k must be either KindLevel0 or KindLevel1");
-    }
-}

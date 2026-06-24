@@ -81,11 +81,11 @@ pub fn main(init: std.process.Init) void {
         parser.nodeshead,
         postparser.metanodes,
         postparser.metanodeshead,
-        // need std.Io.Writer
+        out_file.writer(io, outbuf).interface,
     ) catch |err| crash(err);
     defer generator.deinit();
 
-    generator.print_out() catch |err| crash(err);
+    generator.print_out();
 
     // out_file.writeStreamingAll(io, transformed_text) catch |err| crash(err);
 }

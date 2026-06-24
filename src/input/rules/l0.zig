@@ -5,11 +5,14 @@ const Node = @import("../element/Node.zig");
 const Parser = @import("../Parser.zig");
 const ParsingError = Parser.ParsingError;
 
+pub const attr_nodekind_map = std.StaticStringMap(Node.KindLevel0).initComptime(.{
+    .{ "style", .AttributeStyle },
+    .{ "header", .AttributeHeader },
+});
+
 // every func that is here registered is not required to have the cursor on some position afterwards
 pub const rules = [_]Parser.Rule{
-    .{
-        .func = par, // default
-    },
+    .{ .func = par },
     .{ .trigger = '\\', .func = par }, // force paragraph, if first char is some trigger
     .{ .trigger = '#', .func = heading },
     .{ .trigger = '-', .func = dash_items },
@@ -54,6 +57,8 @@ pub const SyntaxError = error{
     TooSmallHeadingLevel,
     WrongAttributeFormat,
     UnindentedLineAfterDashItem,
+    AttributeBlockNotAtStart,
+    UnknownAttributeName,
 } || AttributeSyntaxError || OrderedItemsSyntaxError;
 
 fn spush_node(p: *Parser, k: Node.KindLevel0, textstart: usize, textend: usize) void {
@@ -65,6 +70,9 @@ fn spush_node(p: *Parser, k: Node.KindLevel0, textstart: usize, textend: usize) 
 }
 
 pub fn attributes(p: *Parser, endat: usize) SyntaxError!void {
+    // attribute block is only allowed if it is the first node in the document
+    if (p.nodeshead != 0) return SyntaxError.AttributeBlockNotAtStart;
+
     var i = p.cursor;
     var line_end = i;
     while (i < endat) : (i = line_end + 1) {
@@ -108,8 +116,11 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!void {
 
         const value_start = i;
 
-        spush_node(p, .AttributeKey, key_start, key_end);
-        spush_node(p, .AttributeValue, value_start, line_end);
+        const attr_name = p.text[key_start..key_end];
+        const attr_kind = attr_nodekind_map.get(attr_name) orelse {
+            return SyntaxError.UnknownAttributeName;
+        };
+        spush_node(p, attr_kind, value_start, line_end);
     }
     p.cursor = endat;
 }

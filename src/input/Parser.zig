@@ -248,6 +248,9 @@ fn find_line_bounds(self: *@This()) ?struct {
     lbound: usize,
     rbound: usize,
 } {
+    const cursor_save = self.cursor;
+    defer self.cursor = cursor_save;
+
     if (!self.skip_whitesp()) return null;
 
     while (self.back()) |c| {

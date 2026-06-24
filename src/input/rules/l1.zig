@@ -5,6 +5,12 @@ const Node = @import("../element/Node.zig");
 const Parser = @import("../Parser.zig");
 const ParsingError = Parser.ParsingError;
 
+pub const cmd_nodekind_map = std.StaticStringMap(Node.KindLevel1).initComptime(.{
+    .{ "link", .CommandLink },
+    .{ "img", .CommandImage },
+    .{ "figc", .CommandFigCaption },
+});
+
 // every func here IS required to have the cursor moved on some non-to-scan position afterwards
 pub const rules = [_]Parser.Rule{
     .{ .trigger = '*', .func = bold_italic_both },
@@ -17,6 +23,7 @@ pub const CommandSyntaxError = error{
     MissingCommandName,
     SpaceBeforeCommandNameNotAllowed,
     MissingCommandArg,
+    UnknownCommandName,
 };
 
 pub const SyntaxError = error{
@@ -115,12 +122,16 @@ pub fn command(p: *Parser, endat: usize) SyntaxError!void {
     }
     if (p.cursor >= endat or name_start == p.cursor) return CommandSyntaxError.MissingCommandName;
     // cursor is +1 of '(', so we exclusively add the command name
-    spush_node(p, .CommandKey, name_start, p.cursor - 1);
+    const cmd_name = p.text[name_start .. p.cursor - 1];
+    const cmd_kind = cmd_nodekind_map.get(cmd_name) orelse {
+        p.cursor = name_start;
+        return CommandSyntaxError.UnknownCommandName;
+    };
     const arg_start = p.cursor;
     while (p.advance()) |c| {
         if (c == ')') break;
     }
     if (p.cursor >= endat or arg_start == p.cursor) return CommandSyntaxError.MissingCommandArg;
     // cursor is +1 of ')', so we exclusively add the command arg
-    spush_node(p, .CommandValue, arg_start, p.cursor - 1);
+    spush_node(p, cmd_kind, arg_start, p.cursor - 1);
 }

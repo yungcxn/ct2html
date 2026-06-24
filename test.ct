@@ -1,5 +1,5 @@
-!key:value
-!otherkey:othervalue
+!style:value
+!header:othervalue
 
 Here is some *bold-containing* text, and some **italic-containing** txt.
 ***both***,
@@ -15,7 +15,7 @@ This is some example
 text, where I'd like to show my `inline code` -- and
 how my blocks work.
 
-This is my @macro(argumenzz).
+This is my @img(argumenzz).
 
 This is the next block.
 

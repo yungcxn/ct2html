@@ -7,6 +7,40 @@ const html_metarule_by_kind = @import("rules/html.zig").metarule_by_kind;
 const rules_html = @import("rules/html.zig").rules;
 const html_rule_by_kind = @import("rules/html.zig").rule_by_kind;
 
+pub const Effect = union(enum) {
+    prepost: struct {
+        pre: []const u8,
+        post: []const u8,
+    },
+    replace: *const fn (g: *Generator) Error![]const u8,
+    ignore: void,
+
+    pub fn xprepost(pre: []const u8, post: []const u8) Effect {
+        return .{ .prepost = .{ .pre = pre, .post = post } };
+    }
+    pub fn xreplace(f: *const fn (g: *Generator) Error![]const u8) Effect {
+        return .{ .replace = f };
+    }
+    pub fn xignore() Effect {
+        return .{ .ignore = {} };
+    }
+
+    pub fn eq(self: Effect, other: Effect) bool {
+        return std.mem.eql(u8, @tagName(self), @tagName(other));
+    }
+};
+
+// Nodes carry not only the text boundary but for attributes or commands,
+// sometimes something more complex is needed, therefore a text returning fn
+pub const Rule = struct {
+    pub fn def(k: Node.Kind, effect: Effect) Rule {
+        return .{ .k = k, .effect = effect };
+    }
+
+    k: Node.Kind,
+    effect: Effect,
+};
+
 // MetaNodes just carry a kind and a before, so it should suffice to just have a
 // single string that we map to the node kind
 pub const MetaRule = struct {
@@ -18,50 +52,18 @@ pub const MetaRule = struct {
     out: []const u8,
 };
 
-// Nodes carry not only the text boundary but for attributes or commands,
-// sometimes something more complex is needed, therefore a text returning fn
-pub const Rule = struct {
-    pub fn def(k: Node.Kind, effect: ?Effect) Rule {
-        return .{ .k = k, .effect = effect };
-    }
-
-    // e.g. <p> and </p>
-    pub const Effect = union(enum) {
-        prepost: struct {
-            pre: []const u8,
-            post: []const u8,
-        },
-        replace: *const fn (g: *Generator) []const u8,
-        ignore: void,
-
-        pub fn xprepost(pre: []const u8, post: []const u8) Effect {
-            return .{ .prepost = .{ .pre = pre, .post = post } };
-        }
-        pub fn xreplace(f: *const fn (g: *Generator) []const u8) Effect {
-            return .{ .replace = f };
-        }
-        pub fn xignore() Effect {
-            return .{ .ignore = {} };
-        }
-
-        pub fn eq(self: Effect, other: Effect) bool {
-            return std.mem.eql(u8, @tagName(self), @tagName(other));
-        }
-    };
-    k: Node.Kind,
-    effect: ?Effect,
-};
-
-const GeneratorError = error{
+pub const Error = error{
+    OOM,
     ExpectedL0NodeGotL1,
-    L0RuleMustBePrePost,
-    NoRuleForKind,
+    L0NodeNotFound,
+    NoEffectForL0NodeRule,
+    ReplaceRuleNotSupportedForL0Node,
     NoMetaRuleForKind,
 };
 
 // arena so we destroy all of the strings at once
 arena: std.heap.ArenaAllocator,
-alloc: std.mem.Allocator, // is only for this generator -> exclusively owned
+arenalloc: std.mem.Allocator, // is only for this generator -> exclusively owned
 
 textin: []const u8, // borrowed from parser
 
@@ -72,15 +74,7 @@ mnodec: usize,
 
 nodecursor: usize = 0,
 mnodecursor: usize = 0,
-
-// we need a representation that consists of atomic textchunks, and if we're
-// intelligent enough, we do not need to break these textchunks and insert
-// inbetween of them; thus the pre-textout representation is an linear arraylist
-
-// chunksout: [][]const u8,
-// chunksout_head: usize = 0,
-
-out: std.Io.Writer, // borrowed
+out: std.Io.Writer,
 
 pub fn init(
     arenabase: std.mem.Allocator,
@@ -94,18 +88,21 @@ pub fn init(
     var new_arena = std.heap.ArenaAllocator.init(arenabase);
     return .{
         .arena = new_arena,
-        .alloc = new_arena.allocator(),
+        .arenalloc = new_arena.allocator(),
         .textin = textin,
         .nodes = nodes,
         .nodec = nodec,
         .mnodes = mnodes,
         .mnodec = mnodec,
-        // .chunksout = new_arena.allocator().alloc([]const u8, 4096),
         .out = out,
     };
 }
 
-fn peek_node(self: *@This()) ?Node {
+pub fn deinit(self: *@This()) void {
+    self.arena.deinit();
+}
+
+pub fn peek_node(self: *@This()) ?Node {
     if (self.nodecursor >= self.nodec) return null;
     return self.nodes[self.nodecursor];
 }
@@ -116,7 +113,7 @@ fn pop_node(self: *@This()) ?Node {
     return self.nodes[self.nodecursor];
 }
 
-fn peek_mnode(self: *@This()) ?MetaNode {
+pub fn peek_mnode(self: *@This()) ?MetaNode {
     if (self.mnodecursor >= self.mnodec) return null;
     return self.mnodes[self.mnodecursor];
 }
@@ -127,7 +124,6 @@ fn pop_mnode(self: *@This()) ?MetaNode {
     return self.mnodes[self.mnodecursor];
 }
 
-// `textin_end` is EXCLUSIVE!
 fn push_chunk(self: *@This(), textin_start: usize, textin_end: usize) void {
     push_chunk_new(self, self.textin[textin_start..textin_end]);
 }
@@ -135,7 +131,7 @@ fn push_chunk(self: *@This(), textin_start: usize, textin_end: usize) void {
 fn push_chunk_new(self: *@This(), newchunk: []const u8) void {
     if (self.chunksout_head >= self.chunksout.len) {
         const newlen = self.chunksout.len * 2;
-        const newchunksout = self.alloc.realloc(self.chunksout, newlen) catch {
+        const newchunksout = self.arenalloc.realloc(self.chunksout, newlen) catch {
             std.log.err("OOM for Generator chunks.");
             std.process.exit(1);
         };
@@ -145,19 +141,26 @@ fn push_chunk_new(self: *@This(), newchunk: []const u8) void {
     self.chunksout_head += 1;
 }
 
-pub fn print_out(self: *@This()) !void {
-    // just go through nodes and build around this the mnodes
+fn error_handle(self: *@This(), n: Node, err: anyerror) noreturn {
+    _ = self;
+    std.log.err("Generating for node {any}: {s}", .{ n.kind.name(), @errorName(err) });
+    return std.process.exit(1);
+}
+
+pub fn print_out(self: *@This()) void {
+    // TODO mnodes
     while (self.pop_node()) |l0node| {
-        if (!l0node.kind.is_l0()) return GeneratorError.ExpectedL0NodeGotL1;
+        if (!l0node.kind.is_l0()) return self.error_handle(l0node, Error.ExpectedL0NodeGotL1);
 
-        const l0rule = try html_rule_by_kind(l0node.kind);
+        const rule: Rule = html_rule_by_kind(l0node.kind) catch return self.error_handle(l0node, Error.NoEffectForL0NodeRule);
 
-        if (l0rule.effect.?.eq(.ignore)) {
-            return GeneratorError.L0RuleMustBePrePost;
-        }
+        const l0textpair = switch (rule.effect) {
+            .prepost => |l0textpair| l0textpair,
+            .replace => return self.error_handle(l0node, Error.ReplaceRuleNotSupportedForL0Node),
+            .ignore => continue,
+        };
 
-        const l0textpair = l0rule.effect.?.prepost;
-        try self.out.writeAll(l0textpair.pre);
+        self.out.writeAll(l0textpair.pre) catch |err| return self.error_handle(l0node, err);
         var lastpos = l0node.textstart;
 
         // a single l1iter must generate text before this and and this node
@@ -167,18 +170,22 @@ pub fn print_out(self: *@This()) !void {
 
             // *bold*_strike
             // first iter, lastpos->*, first write is *..* -> nothing, nice
-            try self.out.writeAll(self.textin[lastpos .. l1node.textstart - 1]);
+            self.out.writeAll(self.textin[lastpos .. l1node.textstart - 1]) catch |err| {
+                return self.error_handle(l1node, err);
+            };
 
-            const l1rule = try html_rule_by_kind(l1node.kind);
+            const l1rule = html_rule_by_kind(l1node.kind) catch |err| {
+                return self.error_handle(l1node, err);
+            };
             switch (l1rule.effect) {
                 .prepost => |l1textpair| {
-                    try self.out.writeAll(l1textpair.pre);
-                    try self.out.writeAll(self.textin[l1node.textstart..l1node.textend]);
-                    try self.out.writeAll(l1textpair.post);
+                    self.out.writeAll(l1textpair.pre) catch |err| return self.error_handle(l1node, err);
+                    self.out.writeAll(self.textin[l1node.textstart..l1node.textend]) catch |err| return self.error_handle(l1node, err);
+                    self.out.writeAll(l1textpair.post) catch |err| return self.error_handle(l1node, err);
                 },
                 .replace => |f| {
-                    const replacement = f(self);
-                    try self.out.writeAll(replacement);
+                    const replacement = f(self) catch |err| return self.error_handle(l1node, err);
+                    self.out.writeAll(replacement) catch |err| return self.error_handle(l1node, err);
                 },
                 .ignore => {
                     // do nothing, just skip the text
@@ -188,7 +195,7 @@ pub fn print_out(self: *@This()) !void {
             lastpos = l1node.textend; // which is some exclusive idx, lies in l0
         }
 
-        try self.out.writeAll(self.textin[lastpos..l0node.textend]);
-        try self.out.writeAll(l0textpair.post);
+        self.out.writeAll(self.textin[lastpos..l0node.textend]) catch |err| return self.error_handle(l0node, err);
+        self.out.writeAll(l0textpair.post) catch |err| return self.error_handle(l0node, err);
     }
 }
