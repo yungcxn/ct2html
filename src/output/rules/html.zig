@@ -18,11 +18,12 @@ pub const metarules = [_]Generator.MetaRule{
     mr(.HeadClose, "</head>"),
     mr(.BodyOpen, "<body>"),
     mr(.BodyClose, "</body>"),
-    mr(.FigureOpen, "<figure>"),
-    mr(.FigureClose, "</figure>"),
 };
 
 pub const rules = [_]Generator.Rule{
+    r(.l0(.Begin), .xignore()), // we print something like <html></html> outside
+    r(.l0(.End), .xignore()),
+
     r(.l0(.AttributeStyle), .xprepost("<link rel=\"stylesheet\" href=\"", "\">")),
     r(.l0(.AttributeHeader), .xprepost("<title>", "</title>")),
 
@@ -53,9 +54,10 @@ pub const rules = [_]Generator.Rule{
     r(.l0(.AlphParenItemLabel), .xprepost("<li value=\"", "\">")),
     r(.l0(.AlphParenItemText), .xprepost("", "</li>")), // scanned when label
     r(.l0(.AlphParenItemSentinel), .xignore()),
-    r(.l1(.CommandLink), .xreplace(&command_link)), // since we have two fields, link and text
-    r(.l1(.CommandImage), .xprepost("<img src=\"", "\">")),
-    r(.l1(.CommandFigCaption), .xprepost("<figcaption>", "</figcaption>")),
+
+    // since we have two fields, link and text
+    r(.l1(.CommandLink), .xreplace(&command_link)),
+    r(.l1(.CommandImage), .xreplace(&command_img)),
 
     r(.l1(.InlineCode), .xprepost("<code>", "</code>")),
 
@@ -69,8 +71,9 @@ pub const rules = [_]Generator.Rule{
     r(.l1(.StrikethroughBoldItalic), .xprepost("<del><strong><em>", "</em></strong></del>")),
 };
 
-pub const l1_margins = std.EnumMap(Node.KindLevel1, .{ usize, usize }).init(.{
+pub const l1_margins = std.EnumMap(Node.KindLevel1, struct { usize, usize }).init(.{
     .CommandLink = .{ "@link(".len, ")".len },
+    .CommandImage = .{ "@image(".len, ")".len },
 
     .InlineCode = .{ 1, 1 },
 
@@ -86,14 +89,14 @@ pub const l1_margins = std.EnumMap(Node.KindLevel1, .{ usize, usize }).init(.{
 
 pub fn metarule_by_kind(k: MetaNode.Kind) !Generator.MetaRule {
     for (metarules) |rule| {
-        if (rule.k.eq(k)) return rule;
+        if (k == rule.kind) return rule;
     }
     return error.NoMetaRuleForKind;
 }
 
 pub fn rule_by_kind(k: Node.Kind) !Generator.Rule {
     for (rules) |rule| {
-        if (rule.k.eq(k)) return rule;
+        if (rule.kind.eq(k)) return rule;
     }
     return error.NoRuleForKind;
 }
@@ -114,4 +117,9 @@ fn command_link(g: *Generator) GeneratorError![]const u8 {
         // only link
         return g.textin[node.textstart..node.textend];
     }
+}
+
+fn command_img(g: *Generator) GeneratorError![]const u8 {
+    _ = g;
+    return "image TODO"; // TODO
 }

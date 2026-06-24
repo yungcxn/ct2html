@@ -1,6 +1,9 @@
 const std = @import("std");
 
 pub const KindLevel0 = enum(u8) {
+    Begin, // global
+    End,
+
     AttributeStyle,
     AttributeHeader,
 
@@ -35,7 +38,6 @@ pub const KindLevel0 = enum(u8) {
 pub const KindLevel1 = enum(u8) {
     CommandLink,
     CommandImage,
-    CommandFigCaption,
 
     InlineCode,
 
@@ -62,7 +64,6 @@ pub const Kind = union(enum) {
     }
 
     pub fn is_l0(self: Kind) bool {
-        std.log.debug("is_l0: {any} for {any}", .{ std.meta.activeTag(self), self });
         return std.meta.activeTag(self) == .L0;
     }
 

@@ -71,7 +71,7 @@ fn spush_node(p: *Parser, k: Node.KindLevel0, textstart: usize, textend: usize) 
 
 pub fn attributes(p: *Parser, endat: usize) SyntaxError!void {
     // attribute block is only allowed if it is the first node in the document
-    if (p.nodeshead != 0) return SyntaxError.AttributeBlockNotAtStart;
+    if (p.nodeshead != 1) return SyntaxError.AttributeBlockNotAtStart;
 
     var i = p.cursor;
     var line_end = i;

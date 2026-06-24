@@ -90,6 +90,8 @@ fn l1_parse_inblock(self: *@This(), blockend: usize) void {
 }
 
 pub fn build_nodes(self: *@This()) void {
+    self.push_node(Node{ .kind = .{ .L0 = .Begin }, .textstart = 0, .textend = 0 });
+
     while (self.find_blockend()) |blockend| {
         const cursor_before = self.cursor;
         if (self.l0_parse_block(blockend)) { // rescan for l1
@@ -100,6 +102,8 @@ pub fn build_nodes(self: *@This()) void {
         self.skip_newline();
         self.skip_newline();
     }
+
+    self.push_node(Node{ .kind = .{ .L0 = .End }, .textstart = 0, .textend = 0 });
 }
 
 pub fn debug_print(self: @This()) void {

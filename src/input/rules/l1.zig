@@ -8,7 +8,6 @@ const ParsingError = Parser.ParsingError;
 pub const cmd_nodekind_map = std.StaticStringMap(Node.KindLevel1).initComptime(.{
     .{ "link", .CommandLink },
     .{ "img", .CommandImage },
-    .{ "figc", .CommandFigCaption },
 });
 
 // every func here IS required to have the cursor moved on some non-to-scan position afterwards

@@ -7,7 +7,7 @@ const rules_post = @import("rules/post.zig");
 const SemanticError = rules_post.SemanticError;
 
 pub const Rule = struct {
-    nodetrigger: Node.Kind,
+    nodetrigger: Node.KindLevel0,
     func: fn (*PostParser) SemanticError!void, // usize: idx of the node
 };
 
@@ -57,9 +57,10 @@ pub fn push_metanode(self: *@This(), node: MetaNode) void {
 pub fn build_metanodes(self: *@This()) void {
     while (self.nodecursor < self.nodec) : (self.nodecursor += 1) {
         const node = self.nodes[self.nodecursor];
+        if (node.kind == .L1) continue;
         var rule_applied = false;
         inline for (comptime rules_post.rules) |rule| {
-            if (std.meta.eql(node.kind, rule.nodetrigger) and !rule_applied) {
+            if (std.meta.eql(node.kind.L0, rule.nodetrigger) and !rule_applied) {
                 // the rule func is assumed to not touch the cursor
                 // except the case where it needs to consume +n nodes, e.g. +1
                 // then it needs to move the cursor by +1, => +n

@@ -2,10 +2,7 @@ const std = @import("std");
 const Generator = @This();
 const Node = @import("../input/element/Node.zig");
 const MetaNode = @import("../input/element/MetaNode.zig");
-const metarules_html = @import("rules/html.zig").metarules;
-const html_metarule_by_kind = @import("rules/html.zig").metarule_by_kind;
-const rules_html = @import("rules/html.zig").rules;
-const html_rule_by_kind = @import("rules/html.zig").rule_by_kind;
+const rules_html = @import("rules/html.zig");
 
 pub const Effect = union(enum) {
     prepost: struct {
@@ -34,10 +31,10 @@ pub const Effect = union(enum) {
 // sometimes something more complex is needed, therefore a text returning fn
 pub const Rule = struct {
     pub fn def(k: Node.Kind, effect: Effect) Rule {
-        return .{ .k = k, .effect = effect };
+        return .{ .kind = k, .effect = effect };
     }
 
-    k: Node.Kind,
+    kind: Node.Kind,
     effect: Effect,
 };
 
@@ -45,10 +42,10 @@ pub const Rule = struct {
 // single string that we map to the node kind
 pub const MetaRule = struct {
     pub fn def(k: MetaNode.Kind, out: []const u8) MetaRule {
-        return .{ .k = k, .out = out };
+        return .{ .kind = k, .out = out };
     }
 
-    k: MetaNode.Kind,
+    kind: MetaNode.Kind,
     out: []const u8,
 };
 
@@ -59,11 +56,13 @@ pub const Error = error{
     NoEffectForL0NodeRule,
     ReplaceRuleNotSupportedForL0Node,
     NoMetaRuleForKind,
+    L1MarginNotFound,
 };
 
 // arena so we destroy all of the strings at once
 arena: std.heap.ArenaAllocator,
 arenalloc: std.mem.Allocator, // is only for this generator -> exclusively owned
+io: std.Io, // for logging and writing to file
 
 textin: []const u8, // borrowed from parser
 
@@ -74,27 +73,29 @@ mnodec: usize,
 
 nodecursor: usize = 0,
 mnodecursor: usize = 0,
-out: std.Io.Writer,
+outf: std.Io.File,
 
 pub fn init(
     arenabase: std.mem.Allocator,
+    io: std.Io,
     textin: []const u8,
     nodes: []Node,
     nodec: usize,
     mnodes: []MetaNode,
     mnodec: usize,
-    out: std.Io.Writer,
+    outf: std.Io.File,
 ) !@This() {
     var new_arena = std.heap.ArenaAllocator.init(arenabase);
     return .{
         .arena = new_arena,
         .arenalloc = new_arena.allocator(),
+        .io = io,
         .textin = textin,
         .nodes = nodes,
         .nodec = nodec,
         .mnodes = mnodes,
         .mnodec = mnodec,
-        .out = out,
+        .outf = outf,
     };
 }
 
@@ -141,18 +142,39 @@ fn push_chunk_new(self: *@This(), newchunk: []const u8) void {
     self.chunksout_head += 1;
 }
 
-fn error_handle(self: *@This(), n: Node, err: anyerror) noreturn {
+fn error_handle(self: *@This(), n: anytype, err: anyerror) noreturn {
     _ = self;
-    std.log.err("Generating for node {any}: {s}", .{ n.kind.name(), @errorName(err) });
+    std.log.err("Generating for node {s}: {s}", .{ n.kind.name(), @errorName(err) });
     return std.process.exit(1);
 }
 
 pub fn print_out(self: *@This()) void {
     // TODO mnodes
     while (self.pop_node()) |l0node| {
-        if (!l0node.kind.is_l0()) return self.error_handle(l0node, Error.ExpectedL0NodeGotL1);
+        if (!l0node.kind.is_l0()) continue;
+        // we came back and this is the last l1 node
 
-        const rule: Rule = html_rule_by_kind(l0node.kind) catch return self.error_handle(l0node, Error.NoEffectForL0NodeRule);
+        // here we manage mnodes, so we travel until we find one
+        // THEN we trigger it when we're on nodecursor=trigger_at, and directly
+        // after we trigger, we pop the mnodecursor
+
+        if (self.peek_mnode()) |mnode| {
+            if (mnode.before_node == self.nodecursor) {
+                const mr = rules_html.metarule_by_kind(mnode.kind) catch |err| {
+                    self.error_handle(mnode, err);
+                };
+
+                self.outf.writeStreamingAll(self.io, mr.out) catch |err| {
+                    self.error_handle(l0node, err);
+                };
+
+                self.mnodecursor += 1;
+            }
+        }
+
+        const rule: Rule = rules_html.rule_by_kind(
+            l0node.kind,
+        ) catch return self.error_handle(l0node, Error.NoEffectForL0NodeRule);
 
         const l0textpair = switch (rule.effect) {
             .prepost => |l0textpair| l0textpair,
@@ -160,7 +182,9 @@ pub fn print_out(self: *@This()) void {
             .ignore => continue,
         };
 
-        self.out.writeAll(l0textpair.pre) catch |err| return self.error_handle(l0node, err);
+        self.outf.writeStreamingAll(self.io, l0textpair.pre) catch |err| {
+            return self.error_handle(l0node, err);
+        };
         var lastpos = l0node.textstart;
 
         // a single l1iter must generate text before this and and this node
@@ -168,24 +192,47 @@ pub fn print_out(self: *@This()) void {
         l1loop: while (self.peek_node()) |l1node| : (self.nodecursor += 1) {
             if (l1node.kind.is_l0()) break :l1loop;
 
+            const l1_margin = rules_html.l1_margins.get(l1node.kind.L1) orelse {
+                return self.error_handle(l1node, Error.L1MarginNotFound);
+            };
+
             // *bold*_strike
             // first iter, lastpos->*, first write is *..* -> nothing, nice
-            self.out.writeAll(self.textin[lastpos .. l1node.textstart - 1]) catch |err| {
+            self.outf.writeStreamingAll(
+                self.io,
+                self.textin[lastpos .. l1node.textstart - l1_margin[0]],
+            ) catch |err| {
                 return self.error_handle(l1node, err);
             };
 
-            const l1rule = html_rule_by_kind(l1node.kind) catch |err| {
+            const l1rule = rules_html.rule_by_kind(l1node.kind) catch |err| {
                 return self.error_handle(l1node, err);
             };
             switch (l1rule.effect) {
                 .prepost => |l1textpair| {
-                    self.out.writeAll(l1textpair.pre) catch |err| return self.error_handle(l1node, err);
-                    self.out.writeAll(self.textin[l1node.textstart..l1node.textend]) catch |err| return self.error_handle(l1node, err);
-                    self.out.writeAll(l1textpair.post) catch |err| return self.error_handle(l1node, err);
+                    self.outf.writeStreamingAll(
+                        self.io,
+                        l1textpair.pre,
+                    ) catch |err| return self.error_handle(l1node, err);
+
+                    self.outf.writeStreamingAll(
+                        self.io,
+                        self.textin[l1node.textstart..l1node.textend],
+                    ) catch |err| return self.error_handle(l1node, err);
+
+                    self.outf.writeStreamingAll(
+                        self.io,
+                        l1textpair.post,
+                    ) catch |err| return self.error_handle(l1node, err);
                 },
                 .replace => |f| {
-                    const replacement = f(self) catch |err| return self.error_handle(l1node, err);
-                    self.out.writeAll(replacement) catch |err| return self.error_handle(l1node, err);
+                    const replacement = f(self) catch |err| {
+                        return self.error_handle(l1node, err);
+                    };
+                    self.outf.writeStreamingAll(
+                        self.io,
+                        replacement,
+                    ) catch |err| return self.error_handle(l1node, err);
                 },
                 .ignore => {
                     // do nothing, just skip the text
@@ -193,9 +240,19 @@ pub fn print_out(self: *@This()) void {
             }
 
             lastpos = l1node.textend; // which is some exclusive idx, lies in l0
+            lastpos += l1_margin[1]; // skip the margin after the l1 node
         }
 
-        self.out.writeAll(self.textin[lastpos..l0node.textend]) catch |err| return self.error_handle(l0node, err);
-        self.out.writeAll(l0textpair.post) catch |err| return self.error_handle(l0node, err);
+        self.outf.writeStreamingAll(
+            self.io,
+            self.textin[lastpos..l0node.textend],
+        ) catch |err| {
+            return self.error_handle(l0node, err);
+        };
+
+        self.outf.writeStreamingAll(
+            self.io,
+            l0textpair.post,
+        ) catch |err| return self.error_handle(l0node, err);
     }
 }

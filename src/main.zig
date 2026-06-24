@@ -60,7 +60,6 @@ pub fn main(init: std.process.Init) void {
     defer parser.deinit();
 
     parser.build_nodes();
-    parser.debug_print();
 
     var postparser = PostParser.init(
         arena.allocator(),
@@ -70,18 +69,16 @@ pub fn main(init: std.process.Init) void {
     defer postparser.deinit();
 
     postparser.build_metanodes();
-    postparser.debug_print();
-
-    const outbuf = arena.allocator().alloc(u8, 4096) catch |err| crash(err);
 
     var generator = Generator.init(
         arena.allocator(),
+        io,
         text,
         parser.nodes,
         parser.nodeshead,
         postparser.metanodes,
         postparser.metanodeshead,
-        out_file.writer(io, outbuf).interface,
+        out_file,
     ) catch |err| crash(err);
     defer generator.deinit();
 
