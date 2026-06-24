@@ -12,10 +12,10 @@ pub const cmd_nodekind_map = std.StaticStringMap(Node.KindLevel1).initComptime(.
 
 // every func here IS required to have the cursor moved on some non-to-scan position afterwards
 pub const rules = [_]Parser.Rule{
-    .{ .trigger = '*', .func = bold_italic_both },
-    .{ .trigger = '_', .func = st_stb_sti_all }, // strikethrough, bold, italic, all
-    .{ .trigger = '`', .func = inline_code },
-    .{ .trigger = '@', .func = command },
+    .{ .trigger = '*', .apply = &bold_italic_both },
+    .{ .trigger = '_', .apply = &st_stb_sti_all }, // strikethrough, bold, italic, all
+    .{ .trigger = '`', .apply = &inline_code },
+    .{ .trigger = '@', .apply = &command },
 };
 
 pub const CommandSyntaxError = error{

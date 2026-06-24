@@ -9,12 +9,16 @@ const SyntaxError = rules_l0.SyntaxError || rules_l1.SyntaxError;
 pub const ParsingError = error{
     InvalidSyntax,
     StopSignNotFound,
+    SearchingRuleAtEOF,
 };
 
 pub const Rule = struct {
     trigger: ?u8 = null,
-    func: fn (*Parser, usize) SyntaxError!void,
-    rescan_for_l1: bool = true, // could l1 rules be applied in this rule block?, not for l1 rules
+    apply: *const fn (*Parser, usize) SyntaxError!void,
+    rescan_for_l1: bool = true, // could l1 rules be applied in this block?
+
+    l0_begin: ?Node.KindLevel0 = null,
+    l0_end: ?Node.KindLevel0 = null,
 };
 
 alloc: std.mem.Allocator,
@@ -57,21 +61,19 @@ pub fn error_handle(self: *@This(), err: anyerror) void {
     std.process.exit(1);
 }
 
-// assume cursor is at the start of the block, and blockend is the end of the block
-fn l0_parse_block(self: *@This(), endat: usize) bool { // returns if l1 rescan after rule
-    inline for (rules_l0.rules[1..]) |rule| {
-        if (self.peek() == rule.trigger) {
-            rule.func(self, endat) catch |err| {
-                self.error_handle(err);
-            };
-            return rule.rescan_for_l1;
-        }
+fn find_l0rule_at_cursor(self: *@This()) ?Rule {
+    const c = self.peek() orelse return null;
+    inline for (rules_l0.vtable) |rule| {
+        if (c == rule.trigger) return rule;
     }
+    return null;
+}
 
-    rules_l0.rules[0].func(self, endat) catch |err| {
+// assume cursor is at the start of the block, and blockend is the end of the block
+fn l0_parse_block(self: *@This(), l0rule: Parser.Rule, endat: usize) void {
+    l0rule.apply(self, endat) catch |err| {
         self.error_handle(err);
     };
-    return rules_l0.rules[0].rescan_for_l1;
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
@@ -81,7 +83,7 @@ fn l1_parse_inblock(self: *@This(), blockend: usize) void {
         if (self.cursor >= blockend) break;
         inline for (rules_l1.rules) |rule| {
             if (c == rule.trigger) {
-                rule.func(self, blockend) catch |err| {
+                rule.apply(self, blockend) catch |err| {
                     self.error_handle(err);
                 };
             }
@@ -90,20 +92,29 @@ fn l1_parse_inblock(self: *@This(), blockend: usize) void {
 }
 
 pub fn build_nodes(self: *@This()) void {
-    self.push_node(Node{ .kind = .{ .L0 = .Begin }, .textstart = 0, .textend = 0 });
+    self.push_meta_l0node(.BeginMeta);
 
     while (self.find_blockend()) |blockend| {
         const cursor_before = self.cursor;
-        if (self.l0_parse_block(blockend)) { // rescan for l1
-            self.cursor = cursor_before; // restart the block scanning now
-            self.l1_parse_inblock(blockend);
-            self.cursor = blockend;
+        const l0rule = self.find_l0rule_at_cursor() orelse rules_l0.vtable[0];
+
+        {
+            if (l0rule.l0_begin) |kind| self.push_meta_l0node(kind);
+            defer if (l0rule.l0_end) |kind| self.push_meta_l0node(kind);
+
+            self.l0_parse_block(l0rule, blockend);
+            if (l0rule.rescan_for_l1) {
+                self.cursor = cursor_before; // restart the block scanning now
+                self.l1_parse_inblock(blockend);
+                self.cursor = blockend;
+            }
         }
+
         self.skip_newline();
         self.skip_newline();
     }
 
-    self.push_node(Node{ .kind = .{ .L0 = .End }, .textstart = 0, .textend = 0 });
+    self.push_meta_l0node(.EndMeta);
 }
 
 pub fn debug_print(self: @This()) void {
@@ -127,6 +138,10 @@ pub fn push_node(self: *@This(), node: Node) void {
     }
     self.nodes[self.nodeshead] = node;
     self.nodeshead += 1;
+}
+
+pub fn push_meta_l0node(self: *@This(), kind: Node.KindLevel0) void {
+    self.push_node(Node{ .kind = .l0(kind), .textstart = 0, .textend = 0 });
 }
 
 pub fn peek(self: *@This()) ?u8 {

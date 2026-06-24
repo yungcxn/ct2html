@@ -10,26 +10,100 @@ pub const attr_nodekind_map = std.StaticStringMap(Node.KindLevel0).initComptime(
     .{ "header", .AttributeHeader },
 });
 
-// every func that is here registered is not required to have the cursor on some position afterwards
-pub const rules = [_]Parser.Rule{
-    .{ .func = par },
-    .{ .trigger = '\\', .func = par }, // force paragraph, if first char is some trigger
-    .{ .trigger = '#', .func = heading },
-    .{ .trigger = '-', .func = dash_items },
-    .{ .trigger = '!', .func = attributes, .rescan_for_l1 = false },
+// every func that is here registered may leave cursor anywhere
+pub const vtable = [_]Parser.Rule{
+    .{
+        .apply = &par,
+    },
+    .{ // force paragraph, if first char is some trigger
+        .trigger = '\\',
+        .apply = &par,
+    },
+    .{
+        .trigger = '#',
+        .apply = &heading,
+    },
+    .{
+        .trigger = '-',
+        .apply = &dash_items,
+        .l0_begin = .UnorderedListBeginMeta,
+        .l0_end = .UnorderedListEndMeta,
+    },
+    .{
+        .trigger = '!',
+        .apply = &attributes,
+        .rescan_for_l1 = false,
+        .l0_begin = .AttributeBeginMeta,
+        .l0_end = .AttributeEndMeta,
+    },
+    .{
+        .trigger = '1',
+        .apply = &num_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
+    .{
+        .trigger = '2',
+        .apply = &num_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
+    .{
+        .trigger = '3',
+        .apply = &num_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
+    .{
+        .trigger = '4',
+        .apply = &num_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
+    .{
+        .trigger = '5',
+        .apply = &num_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
+    .{
+        .trigger = '6',
+        .apply = &num_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
+    .{
+        .trigger = '7',
+        .apply = &num_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
+    .{
+        .trigger = '8',
+        .apply = &num_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
+    .{
+        .trigger = '9',
+        .apply = &num_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
 
-    .{ .trigger = '1', .func = num_items },
-    .{ .trigger = '2', .func = num_items },
-    .{ .trigger = '3', .func = num_items },
-    .{ .trigger = '4', .func = num_items },
-    .{ .trigger = '5', .func = num_items },
-    .{ .trigger = '6', .func = num_items },
-    .{ .trigger = '7', .func = num_items },
-    .{ .trigger = '8', .func = num_items },
-    .{ .trigger = '9', .func = num_items },
+    .{
+        .trigger = 'a',
+        .apply = &alph_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
 
-    .{ .trigger = 'a', .func = alph_items },
-    .{ .trigger = 'A', .func = alph_items },
+    .{
+        .trigger = 'A',
+        .apply = &alph_items,
+        .l0_begin = .OrderedListBeginMeta,
+        .l0_end = .OrderedListEndMeta,
+    },
 };
 
 const AttributeSyntaxError = error{
@@ -71,7 +145,7 @@ fn spush_node(p: *Parser, k: Node.KindLevel0, textstart: usize, textend: usize) 
 
 pub fn attributes(p: *Parser, endat: usize) SyntaxError!void {
     // attribute block is only allowed if it is the first node in the document
-    if (p.nodeshead != 1) return SyntaxError.AttributeBlockNotAtStart;
+    if (p.nodeshead != 2) return SyntaxError.AttributeBlockNotAtStart;
 
     var i = p.cursor;
     var line_end = i;
@@ -181,7 +255,6 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!void {
             }
         }
     }
-    spush_node(p, .DashItemSentinel, 0, 0);
 }
 
 // this is special; cursor may be on 1-9, since we start on first line ->`1. text` or `5. text`
@@ -191,7 +264,6 @@ fn ordered_items(
     sep: u8,
     itemlabelkind: Node.KindLevel0,
     itemtextkind: Node.KindLevel0,
-    itemsentinelkind: Node.KindLevel0,
     endat: usize,
 ) SyntaxError!void {
     outer: while (true) {
@@ -248,7 +320,6 @@ fn ordered_items(
         }
         return OrderedItemsSyntaxError.TextRegionEndedUnexpectedly;
     }
-    spush_node(p, itemsentinelkind, 0, 0);
 }
 
 pub fn num_items(p: *Parser, endat: usize) SyntaxError!void {
@@ -264,7 +335,6 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!void {
                 c,
                 if (c == '.') .NumDotItemLabel else .NumParenItemLabel,
                 if (c == '.') .NumDotItemText else .NumParenItemText,
-                if (c == '.') .NumDotItemSentinel else .NumParenItemSentinel,
                 endat,
             );
         }
@@ -291,7 +361,6 @@ pub fn alph_items(p: *Parser, endat: usize) SyntaxError!void {
             sep,
             if (sep == '.') .AlphDotItemLabel else .AlphParenItemLabel,
             if (sep == '.') .AlphDotItemText else .AlphParenItemText,
-            if (sep == '.') .AlphDotItemSentinel else .AlphParenItemSentinel,
             endat,
         );
     }

@@ -1,7 +1,6 @@
 const std = @import("std");
 const Generator = @This();
 const Node = @import("../input/element/Node.zig");
-const MetaNode = @import("../input/element/MetaNode.zig");
 const rules_html = @import("rules/html.zig");
 
 pub const Effect = union(enum) {
@@ -40,14 +39,6 @@ pub const Rule = struct {
 
 // MetaNodes just carry a kind and a before, so it should suffice to just have a
 // single string that we map to the node kind
-pub const MetaRule = struct {
-    pub fn def(k: MetaNode.Kind, out: []const u8) MetaRule {
-        return .{ .kind = k, .out = out };
-    }
-
-    kind: MetaNode.Kind,
-    out: []const u8,
-};
 
 pub const Error = error{
     OOM,
@@ -68,11 +59,8 @@ textin: []const u8, // borrowed from parser
 
 nodes: []Node,
 nodec: usize,
-mnodes: []MetaNode,
-mnodec: usize,
 
 nodecursor: usize = 0,
-mnodecursor: usize = 0,
 outf: std.Io.File,
 
 pub fn init(
@@ -81,8 +69,6 @@ pub fn init(
     textin: []const u8,
     nodes: []Node,
     nodec: usize,
-    mnodes: []MetaNode,
-    mnodec: usize,
     outf: std.Io.File,
 ) !@This() {
     var new_arena = std.heap.ArenaAllocator.init(arenabase);
@@ -93,8 +79,6 @@ pub fn init(
         .textin = textin,
         .nodes = nodes,
         .nodec = nodec,
-        .mnodes = mnodes,
-        .mnodec = mnodec,
         .outf = outf,
     };
 }
@@ -112,17 +96,6 @@ fn pop_node(self: *@This()) ?Node {
     if (self.nodecursor >= self.nodec) return null;
     defer self.nodecursor += 1;
     return self.nodes[self.nodecursor];
-}
-
-pub fn peek_mnode(self: *@This()) ?MetaNode {
-    if (self.mnodecursor >= self.mnodec) return null;
-    return self.mnodes[self.mnodecursor];
-}
-
-fn pop_mnode(self: *@This()) ?MetaNode {
-    if (self.mnodecursor >= self.mnodec) return null;
-    defer self.mnodecursor += 1;
-    return self.mnodes[self.mnodecursor];
 }
 
 fn push_chunk(self: *@This(), textin_start: usize, textin_end: usize) void {
@@ -153,24 +126,6 @@ pub fn print_out(self: *@This()) void {
     while (self.pop_node()) |l0node| {
         if (!l0node.kind.is_l0()) continue;
         // we came back and this is the last l1 node
-
-        // here we manage mnodes, so we travel until we find one
-        // THEN we trigger it when we're on nodecursor=trigger_at, and directly
-        // after we trigger, we pop the mnodecursor
-
-        if (self.peek_mnode()) |mnode| {
-            if (mnode.before_node == self.nodecursor) {
-                const mr = rules_html.metarule_by_kind(mnode.kind) catch |err| {
-                    self.error_handle(mnode, err);
-                };
-
-                self.outf.writeStreamingAll(self.io, mr.out) catch |err| {
-                    self.error_handle(l0node, err);
-                };
-
-                self.mnodecursor += 1;
-            }
-        }
 
         const rule: Rule = rules_html.rule_by_kind(
             l0node.kind,

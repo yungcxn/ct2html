@@ -1,11 +1,13 @@
 const std = @import("std");
 
 pub const KindLevel0 = enum(u8) {
-    Begin, // global
-    End,
+    BeginMeta,
+    EndMeta,
 
+    AttributeBeginMeta,
     AttributeStyle,
     AttributeHeader,
+    AttributeEndMeta,
 
     Heading1,
     Heading2,
@@ -16,23 +18,25 @@ pub const KindLevel0 = enum(u8) {
     Paragraph,
 
     DashItem,
-    DashItemSentinel, // sentinels are needed so that we do know when to separate two lists
+    DashItemEndMeta, // sentinels are needed so that we do know when to separate two lists
+
+    OrderedListBeginMeta,
+    OrderedListEndMeta,
+
+    UnorderedListBeginMeta,
+    UnorderedListEndMeta,
 
     NumDotItemLabel,
     NumDotItemText,
-    NumDotItemSentinel,
 
     NumParenItemLabel,
     NumParenItemText,
-    NumParenItemSentinel,
 
     AlphDotItemLabel,
     AlphDotItemText,
-    AlphDotItemSentinel,
 
     AlphParenItemLabel,
     AlphParenItemText,
-    AlphParenItemSentinel,
 };
 
 pub const KindLevel1 = enum(u8) {

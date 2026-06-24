@@ -1,15 +1,12 @@
 const std = @import("std");
 const filex = @import("filex.zig");
 const argx = @import("argx.zig");
-const Logger = @import("Logger.zig");
 const Parser = @import("input/Parser.zig");
-const PostParser = @import("input/PostParser.zig");
 const Generator = @import("output/Generator.zig");
 
 pub var manualloc: std.mem.Allocator = undefined;
 pub var arena: std.heap.ArenaAllocator = undefined;
 pub var io: std.Io = undefined;
-pub var logger: Logger = undefined;
 
 fn crash(err: anyerror) noreturn {
     std.log.err("{s}", .{@errorName(err)});
@@ -36,7 +33,6 @@ pub fn main(init: std.process.Init) void {
     manualloc = init.gpa;
     arena = std.heap.ArenaAllocator.init(manualloc);
     defer arena.deinit();
-    logger = Logger{ .io = io, .arena = &arena };
 
     const argslice = init.minimal.args.toSlice(
         arena.allocator(),
@@ -60,29 +56,17 @@ pub fn main(init: std.process.Init) void {
     defer parser.deinit();
 
     parser.build_nodes();
+    parser.debug_print();
 
-    var postparser = PostParser.init(
-        arena.allocator(),
-        parser.nodes,
-        parser.nodeshead,
-    ) catch |err| crash(err);
-    defer postparser.deinit();
+    // var generator = Generator.init(
+    //     arena.allocator(),
+    //     io,
+    //     text,
+    //     parser.nodes,
+    //     parser.nodeshead,
+    //     out_file,
+    // ) catch |err| crash(err);
+    // defer generator.deinit();
 
-    postparser.build_metanodes();
-
-    var generator = Generator.init(
-        arena.allocator(),
-        io,
-        text,
-        parser.nodes,
-        parser.nodeshead,
-        postparser.metanodes,
-        postparser.metanodeshead,
-        out_file,
-    ) catch |err| crash(err);
-    defer generator.deinit();
-
-    generator.print_out();
-
-    // out_file.writeStreamingAll(io, transformed_text) catch |err| crash(err);
+    // generator.print_out();
 }
