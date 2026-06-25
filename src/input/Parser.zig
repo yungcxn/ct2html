@@ -13,8 +13,14 @@ pub const ParsingError = error{
 };
 
 pub const Rule = struct {
+    pub const ApplyState = enum(u8) {
+        transitioned_to_p,
+        did_not_transition,
+        errd,
+    };
+
     trigger: ?u8 = null,
-    apply: *const fn (*Parser, usize) SyntaxError!void,
+    apply: *const fn (*Parser, usize) SyntaxError!ApplyState, //
     rescan_for_l1: bool = true, // could l1 rules be applied in this block?
 
     l0_begin: ?Node.KindLevel0 = null,
@@ -70,25 +76,32 @@ fn find_l0rule_at_cursor(self: *@This()) ?Rule {
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
-fn l0_parse_block(self: *@This(), l0rule: Parser.Rule, endat: usize) void {
-    l0rule.apply(self, endat) catch |err| {
+fn l0_parse_block(
+    self: *@This(),
+    l0rule: Parser.Rule,
+    endat: usize,
+) Parser.Rule.ApplyState {
+    return l0rule.apply(self, endat) catch |err| {
         self.error_handle(err);
+        return .errd;
     };
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
 // but cursor must be preserved after each func since it may move if the rule needs the cursor to
-fn l1_parse_inblock(self: *@This(), blockend: usize) void {
+fn l1_parse_inblock(self: *@This(), blockend: usize) Parser.Rule.ApplyState {
     while (self.advance()) |c| {
         if (self.cursor >= blockend) break;
         inline for (rules_l1.rules) |rule| {
             if (c == rule.trigger) {
-                rule.apply(self, blockend) catch |err| {
+                return rule.apply(self, blockend) catch |err| {
                     self.error_handle(err);
+                    return .errd;
                 };
             }
         }
     }
+    return .errd;
 }
 
 pub fn build_nodes(self: *@This()) void {
@@ -99,13 +112,36 @@ pub fn build_nodes(self: *@This()) void {
         const l0rule = self.find_l0rule_at_cursor() orelse rules_l0.vtable[0];
 
         {
-            if (l0rule.l0_begin) |kind| self.push_meta_l0node(kind);
-            defer if (l0rule.l0_end) |kind| self.push_meta_l0node(kind);
+            var apply_state: Rule.ApplyState = undefined;
 
-            self.l0_parse_block(l0rule, blockend);
+            if (l0rule.l0_begin) |kind| self.push_meta_l0node(kind);
+
+            defer if (l0rule.l0_end) |kind| {
+                if (apply_state == .did_not_transition) {
+                    self.push_meta_l0node(kind);
+                }
+            };
+
+            apply_state = self.l0_parse_block(l0rule, blockend);
+
+            switch (apply_state) {
+                .transitioned_to_p => {
+                    // we pushed to head-1 the p node, and not yet l1 nodes
+                    // so if we had a l0_begin pushed node, we must replace it
+                    // by the p node and reset cursor by -1
+                    if (l0rule.l0_begin) |_| {
+                        const last_pnode = self.nodes[self.nodeshead - 1];
+                        self.nodes[self.nodeshead - 2] = last_pnode;
+                        self.nodeshead -= 1;
+                    }
+                },
+                .did_not_transition => {}, // good
+                .errd => return self.error_handle(ParsingError.InvalidSyntax),
+            }
+
             if (l0rule.rescan_for_l1) {
                 self.cursor = cursor_before; // restart the block scanning now
-                self.l1_parse_inblock(blockend);
+                _ = self.l1_parse_inblock(blockend); // TODO
                 self.cursor = blockend;
             }
         }

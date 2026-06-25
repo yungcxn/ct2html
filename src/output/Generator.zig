@@ -121,93 +121,67 @@ fn error_handle(self: *@This(), n: anytype, err: anyerror) noreturn {
     return std.process.exit(1);
 }
 
+// TODO BUG only doing the first l1 in a l0 block
 pub fn print_out(self: *@This()) void {
-    // TODO mnodes
     while (self.pop_node()) |l0node| {
         if (!l0node.kind.is_l0()) continue;
-        // we came back and this is the last l1 node
 
-        const rule: Rule = rules_html.rule_by_kind(
-            l0node.kind,
-        ) catch return self.error_handle(l0node, Error.NoEffectForL0NodeRule);
+        const rule: Rule = rules_html.rule_by_kind(l0node.kind) catch
+            return self.error_handle(l0node, Error.NoEffectForL0NodeRule);
 
         const l0textpair = switch (rule.effect) {
-            .prepost => |l0textpair| l0textpair,
+            .prepost => |pair| pair,
             .replace => return self.error_handle(l0node, Error.ReplaceRuleNotSupportedForL0Node),
             .ignore => continue,
         };
 
-        self.outf.writeStreamingAll(self.io, l0textpair.pre) catch |err| {
+        self.outf.writeStreamingAll(self.io, l0textpair.pre) catch |err|
             return self.error_handle(l0node, err);
-        };
+
         var lastpos = l0node.textstart;
 
-        // a single l1iter must generate text before this and and this node
-        // so `lastpos` gets updated to the end of the last l1node
         l1loop: while (self.peek_node()) |l1node| : (self.nodecursor += 1) {
             if (l1node.kind.is_l0()) break :l1loop;
 
-            const l1_margin = rules_html.l1_margins.get(l1node.kind.L1) orelse {
+            const l1_margin = rules_html.l1_margins.get(l1node.kind.L1) orelse
                 return self.error_handle(l1node, Error.L1MarginNotFound);
-            };
 
-            // *bold*_strike
-            // first iter, lastpos->*, first write is *..* -> nothing, nice
-            self.outf.writeStreamingAll(
-                self.io,
-                self.textin[lastpos .. l1node.textstart - l1_margin[0]],
-            ) catch |err| {
-                return self.error_handle(l1node, err);
-            };
-
-            const l1rule = rules_html.rule_by_kind(l1node.kind) catch |err| {
-                return self.error_handle(l1node, err);
-            };
-            switch (l1rule.effect) {
-                .prepost => |l1textpair| {
-                    self.outf.writeStreamingAll(
-                        self.io,
-                        l1textpair.pre,
-                    ) catch |err| return self.error_handle(l1node, err);
-
-                    self.outf.writeStreamingAll(
-                        self.io,
-                        self.textin[l1node.textstart..l1node.textend],
-                    ) catch |err| return self.error_handle(l1node, err);
-
-                    self.outf.writeStreamingAll(
-                        self.io,
-                        l1textpair.post,
-                    ) catch |err| return self.error_handle(l1node, err);
-                },
-                .replace => |f| {
-                    const replacement = f(self) catch |err| {
-                        return self.error_handle(l1node, err);
-                    };
-                    self.outf.writeStreamingAll(
-                        self.io,
-                        replacement,
-                    ) catch |err| return self.error_handle(l1node, err);
-                },
-                .ignore => {
-                    // do nothing, just skip the text
-                },
+            if (l1node.textstart < lastpos or l1node.textend > l0node.textend) {
+                continue :l1loop;
             }
 
-            lastpos = l1node.textend; // which is some exclusive idx, lies in l0
-            lastpos += l1_margin[1]; // skip the margin after the l1 node
+            const pre_cut = l1node.textstart - l1_margin[0];
+            self.outf.writeStreamingAll(self.io, self.textin[lastpos..pre_cut]) catch |err|
+                return self.error_handle(l1node, err);
+
+            const l1rule = rules_html.rule_by_kind(l1node.kind) catch |err|
+                return self.error_handle(l1node, err);
+
+            switch (l1rule.effect) {
+                .prepost => |pair| {
+                    self.outf.writeStreamingAll(self.io, pair.pre) catch |err|
+                        return self.error_handle(l1node, err);
+                    self.outf.writeStreamingAll(self.io, self.textin[l1node.textstart..l1node.textend]) catch |err|
+                        return self.error_handle(l1node, err);
+                    self.outf.writeStreamingAll(self.io, pair.post) catch |err|
+                        return self.error_handle(l1node, err);
+                },
+                .replace => |f| {
+                    const replacement = f(self) catch |err|
+                        return self.error_handle(l1node, err);
+                    self.outf.writeStreamingAll(self.io, replacement) catch |err|
+                        return self.error_handle(l1node, err);
+                },
+                .ignore => {},
+            }
+
+            lastpos = l1node.textend + l1_margin[1];
         }
 
-        self.outf.writeStreamingAll(
-            self.io,
-            self.textin[lastpos..l0node.textend],
-        ) catch |err| {
+        self.outf.writeStreamingAll(self.io, self.textin[lastpos..l0node.textend]) catch |err|
             return self.error_handle(l0node, err);
-        };
 
-        self.outf.writeStreamingAll(
-            self.io,
-            l0textpair.post,
-        ) catch |err| return self.error_handle(l0node, err);
+        self.outf.writeStreamingAll(self.io, l0textpair.post) catch |err|
+            return self.error_handle(l0node, err);
     }
 }

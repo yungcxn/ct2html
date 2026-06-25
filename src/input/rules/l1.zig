@@ -39,7 +39,7 @@ fn spush_node(p: *Parser, k: Node.KindLevel1, textstart: usize, textend: usize) 
     });
 }
 
-fn capture_for(p: *Parser, comptime capture: u8, k: Node.KindLevel1, endat: usize, err: SyntaxError) SyntaxError!void {
+fn capture_for(p: *Parser, comptime capture: u8, k: Node.KindLevel1, endat: usize, err: SyntaxError) SyntaxError!Parser.Rule.ApplyState {
     const after_capture = p.cursor;
     if (after_capture >= endat) return err;
     p.mustfind_until(endat, .{capture}) catch return err;
@@ -47,6 +47,8 @@ fn capture_for(p: *Parser, comptime capture: u8, k: Node.KindLevel1, endat: usiz
     //   we advance (pop) the letter after the capture
     p.cursor += 1;
     spush_node(p, k, after_capture, p.cursor - 1);
+
+    return .did_not_transition;
 }
 
 fn capture_for_inlevels(
@@ -55,7 +57,7 @@ fn capture_for_inlevels(
     comptime level_kinds: anytype,
     endat: usize,
     err: SyntaxError,
-) SyntaxError!void {
+) SyntaxError!Parser.Rule.ApplyState {
     var capturec: usize = 1;
     while (p.advance()) |c| {
         if (c != capture) break;
@@ -86,40 +88,55 @@ fn capture_for_inlevels(
     if (p.cursor >= endat) return err;
     if (check_capturec != capturec) return err;
     spush_node(p, level.?, after_capture, first_captureend);
+    return .did_not_transition;
 }
 
-pub fn bold_italic_both(p: *Parser, endat: usize) SyntaxError!void {
-    try capture_for_inlevels(
+pub fn bold_italic_both(
+    p: *Parser,
+    endat: usize,
+) SyntaxError!Parser.Rule.ApplyState {
+    _ = try capture_for_inlevels(
         p,
         '*',
         .{ .Bold, .Italic, .BoldItalic },
         endat,
         SyntaxError.NotEnoughAsterisks,
     );
+    return .did_not_transition;
 }
 
-pub fn st_stb_sti_all(p: *Parser, endat: usize) SyntaxError!void {
-    try capture_for_inlevels(
+pub fn st_stb_sti_all(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
+    _ = try capture_for_inlevels(
         p,
         '_',
         .{ .Strikethrough, .StrikethroughBold, .StrikethroughItalic, .StrikethroughBoldItalic },
         endat,
         SyntaxError.NotEnoughUnderlines,
     );
+    return .did_not_transition;
 }
 
-pub fn inline_code(p: *Parser, endat: usize) SyntaxError!void {
-    try capture_for(p, '`', .InlineCode, endat, SyntaxError.InlineCodeBacktick2NotFound);
+pub fn inline_code(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
+    _ = try capture_for(
+        p,
+        '`',
+        .InlineCode,
+        endat,
+        SyntaxError.InlineCodeBacktick2NotFound,
+    );
+    return .did_not_transition;
 }
 
-pub fn command(p: *Parser, endat: usize) SyntaxError!void {
+pub fn command(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     // we only accept commands of type @key(arg), while having cursor on @
     const name_start = p.cursor;
     while (p.advance()) |c| {
         if (c == '(') break;
         if (Parser.is_whitesp(c)) return CommandSyntaxError.SpaceBeforeCommandNameNotAllowed;
     }
-    if (p.cursor >= endat or name_start == p.cursor) return CommandSyntaxError.MissingCommandName;
+
+    if (p.cursor >= endat or name_start == p.cursor)
+        return CommandSyntaxError.MissingCommandName;
     // cursor is +1 of '(', so we exclusively add the command name
     const cmd_name = p.text[name_start .. p.cursor - 1];
     const cmd_kind = cmd_nodekind_map.get(cmd_name) orelse {
@@ -133,4 +150,6 @@ pub fn command(p: *Parser, endat: usize) SyntaxError!void {
     if (p.cursor >= endat or arg_start == p.cursor) return CommandSyntaxError.MissingCommandArg;
     // cursor is +1 of ')', so we exclusively add the command arg
     spush_node(p, cmd_kind, arg_start, p.cursor - 1);
+
+    return .did_not_transition;
 }

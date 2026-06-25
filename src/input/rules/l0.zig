@@ -143,7 +143,7 @@ fn spush_node(p: *Parser, k: Node.KindLevel0, textstart: usize, textend: usize) 
     });
 }
 
-pub fn attributes(p: *Parser, endat: usize) SyntaxError!void {
+pub fn attributes(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     // attribute block is only allowed if it is the first node in the document
     if (p.nodeshead != 2) return SyntaxError.AttributeBlockNotAtStart;
 
@@ -197,10 +197,12 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!void {
         spush_node(p, attr_kind, value_start, line_end);
     }
     p.cursor = endat;
+
+    return .did_not_transition;
 }
 
 // read #'s
-pub fn heading(p: *Parser, endat: usize) SyntaxError!void {
+pub fn heading(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     var hashtagc: usize = 0;
     while (p.advance()) |c| {
         if (c != '#') break;
@@ -224,9 +226,11 @@ pub fn heading(p: *Parser, endat: usize) SyntaxError!void {
     }
 
     spush_node(p, kind, start, endat);
+
+    return .did_not_transition;
 }
 
-pub fn dash_items(p: *Parser, endat: usize) SyntaxError!void {
+pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     outer: while (true) {
         // skip '-'
         p.cursor += 1;
@@ -255,6 +259,7 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!void {
             }
         }
     }
+    return .did_not_transition;
 }
 
 // this is special; cursor may be on 1-9, since we start on first line ->`1. text` or `5. text`
@@ -265,7 +270,7 @@ fn ordered_items(
     itemlabelkind: Node.KindLevel0,
     itemtextkind: Node.KindLevel0,
     endat: usize,
-) SyntaxError!void {
+) SyntaxError!Parser.Rule.ApplyState {
     outer: while (true) {
         const label_first = p.cursor;
 
@@ -320,9 +325,10 @@ fn ordered_items(
         }
         return OrderedItemsSyntaxError.TextRegionEndedUnexpectedly;
     }
+    return .did_not_transition;
 }
 
-pub fn num_items(p: *Parser, endat: usize) SyntaxError!void {
+pub fn num_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     // the rule is: digit(s), then either '.' or ')', if anything wrong -> par
     const c_safe = p.cursor;
     var c = p.text[p.cursor];
@@ -345,7 +351,7 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!void {
     return par(p, endat);
 }
 
-pub fn alph_items(p: *Parser, endat: usize) SyntaxError!void {
+pub fn alph_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     // the rule is: one alph, then either '.' or ')', if anything wrong -> par
     const c_safe = p.cursor;
     blk: {
@@ -366,13 +372,18 @@ pub fn alph_items(p: *Parser, endat: usize) SyntaxError!void {
     }
 
     p.cursor = c_safe;
-    return par(p, endat);
+    _ = par(p, endat) catch |err| {
+        p.error_handle(err);
+        return .errd;
+    };
+    return .transitioned_to_p;
 }
 
 // default rule
-pub fn par(p: *Parser, endat: usize) SyntaxError!void {
+pub fn par(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     const start = p.cursor;
     p.cursor = endat;
 
     spush_node(p, .Paragraph, start, endat);
+    return .did_not_transition;
 }
