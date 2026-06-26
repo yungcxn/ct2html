@@ -20,9 +20,9 @@ pub const rules = [_]Parser.Rule{
 
 pub const CommandSyntaxError = error{
     MissingCommandName,
-    SpaceBeforeCommandNameNotAllowed,
     MissingCommandArg,
     UnknownCommandName,
+    WhiteSpaceInCommandNameNotAllowed,
 };
 
 pub const SyntaxError = error{
@@ -31,22 +31,22 @@ pub const SyntaxError = error{
     InlineCodeBacktick2NotFound,
 } || CommandSyntaxError;
 
-fn spush_node(p: *Parser, k: Node.KindLevel1, textstart: usize, textend: usize) void {
-    p.push_node(.{
-        .kind = .{ .L1 = k },
-        .textstart = textstart,
-        .textend = textend,
-    });
-}
+fn capture_for(
+    p: *Parser,
+    comptime capture: u8,
+    k: Node.KindLevel1,
+    endat: usize,
+    err: SyntaxError,
+) SyntaxError!Parser.Rule.ApplyState {
+    // we assume cursor pos is +1 after capture
+    const chars_in_capture = p.bounded(p.skip(capture, true), endat) catch {
+        return err;
+    };
+    p.push_l1node(k, p.cursor - chars_in_capture, p.cursor);
 
-fn capture_for(p: *Parser, comptime capture: u8, k: Node.KindLevel1, endat: usize, err: SyntaxError) SyntaxError!Parser.Rule.ApplyState {
-    const after_capture = p.cursor;
-    if (after_capture >= endat) return err;
-    p.mustfind_until(endat, .{capture}) catch return err;
-    // cursor is at second capture now, and on return we must be on +1, such that on next parse iter
-    //   we advance (pop) the letter after the capture
-    p.cursor += 1;
-    spush_node(p, k, after_capture, p.cursor - 1);
+    // cursor is at second capture now, and on return we must be on +1, such
+    // that on next parse iter we pop (pop) the letter after the capture
+    p.inc();
 
     return .did_not_transition;
 }
@@ -58,36 +58,44 @@ fn capture_for_inlevels(
     endat: usize,
     err: SyntaxError,
 ) SyntaxError!Parser.Rule.ApplyState {
-    var capturec: usize = 1;
-    while (p.advance()) |c| {
-        if (c != capture) break;
-        capturec += 1;
-    }
-    if (p.cursor >= endat) return err;
+    // we assume cursor pos is on second capture letter, so we move back
+    // to cound the capture to get the level
+    p.dec();
+    const capturec = p.bounded(p.skip(capture, false), endat) catch {
+        return err;
+    };
+    const text_start = p.cursor;
 
     var level: ?Node.KindLevel1 = null;
-    inline for (level_kinds, 1..) |lk, idx| { // primitive, but needed in half-comptime half-rt
-        if (capturec == idx) {
-            level = lk;
-        }
-    }
-    if (level == null) return err;
+    {
+        // TODO give l1 nodes a level number table field, rework `Node`
+        // primitive, but needed in half-comptime half-runtime world
 
-    // cursor is at first letter after capture, much like in the normal `capture_for`
-    const after_capture = p.cursor - 1;
-    if (after_capture >= endat) return err;
-    p.mustfind_until(endat, .{capture}) catch return err;
-    // our cursor is on the first of the capture, go forth
-    const first_captureend = p.cursor;
-    var check_capturec: usize = 0;
-    while (p.peek()) |c| {
-        if (c != capture) break;
-        check_capturec += 1;
-        p.cursor += 1;
+        inline for (level_kinds, 1..) |lk, idx| {
+            if (capturec == idx) {
+                level = lk;
+            }
+        }
+        if (level == null) return err;
     }
-    if (p.cursor >= endat) return err;
-    if (check_capturec != capturec) return err;
-    spush_node(p, level.?, after_capture, first_captureend);
+
+    // cursor is at first letter after capture, much like in `capture_for`
+    const chars_in_capture = p.bounded(p.skip(capture, true), endat) catch {
+        return err;
+    };
+
+    // cursor is on the first of the capture, repeat
+    const capturec2 = p.bounded(p.skip(capture, false), endat) catch {
+        return err;
+    };
+
+    // e.g. ***txt-in-capture*** => capturec = 3, capturec2 = 3, must be same
+    if (capturec2 != capturec) return err;
+
+    p.push_l1node(level.?, text_start, text_start + chars_in_capture);
+
+    // we return on cursor being +1 of the second capture, which is correct,
+    // -> next pop gives the letter after the capture, as expected
     return .did_not_transition;
 }
 
@@ -95,61 +103,69 @@ pub fn bold_italic_both(
     p: *Parser,
     endat: usize,
 ) SyntaxError!Parser.Rule.ApplyState {
-    _ = try capture_for_inlevels(
+    return capture_for_inlevels(
         p,
         '*',
         .{ .Bold, .Italic, .BoldItalic },
         endat,
         SyntaxError.NotEnoughAsterisks,
     );
-    return .did_not_transition;
 }
 
-pub fn st_stb_sti_all(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
-    _ = try capture_for_inlevels(
+pub fn st_stb_sti_all(
+    p: *Parser,
+    endat: usize,
+) SyntaxError!Parser.Rule.ApplyState {
+    return capture_for_inlevels(
         p,
         '_',
         .{ .Strikethrough, .StrikethroughBold, .StrikethroughItalic, .StrikethroughBoldItalic },
         endat,
         SyntaxError.NotEnoughUnderlines,
     );
-    return .did_not_transition;
 }
 
 pub fn inline_code(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
-    _ = try capture_for(
+    return capture_for(
         p,
         '`',
         .InlineCode,
         endat,
         SyntaxError.InlineCodeBacktick2NotFound,
     );
-    return .did_not_transition;
 }
 
 pub fn command(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     // we only accept commands of type @key(arg), while having cursor on @
     const name_start = p.cursor;
-    while (p.advance()) |c| {
-        if (c == '(') break;
-        if (Parser.is_whitesp(c)) return CommandSyntaxError.SpaceBeforeCommandNameNotAllowed;
+
+    const namec = p.bounded(p.skip('(', true), endat) catch {
+        return CommandSyntaxError.MissingCommandName;
+    };
+
+    if (namec == 0) return CommandSyntaxError.MissingCommandName;
+
+    // cursor is on '('
+    const cmd_name = p.text[name_start..p.cursor];
+    if (std.mem.containsAtLeast(u8, cmd_name, 0, &.{ ' ', '\t' })) {
+        return CommandSyntaxError.WhiteSpaceInCommandNameNotAllowed;
     }
 
-    if (p.cursor >= endat or name_start == p.cursor)
-        return CommandSyntaxError.MissingCommandName;
-    // cursor is +1 of '(', so we exclusively add the command name
-    const cmd_name = p.text[name_start .. p.cursor - 1];
     const cmd_kind = cmd_nodekind_map.get(cmd_name) orelse {
-        p.cursor = name_start;
         return CommandSyntaxError.UnknownCommandName;
     };
-    const arg_start = p.cursor;
-    while (p.advance()) |c| {
-        if (c == ')') break;
-    }
-    if (p.cursor >= endat or arg_start == p.cursor) return CommandSyntaxError.MissingCommandArg;
-    // cursor is +1 of ')', so we exclusively add the command arg
-    spush_node(p, cmd_kind, arg_start, p.cursor - 1);
+
+    p.inc(); // cursor is now on first letter of arg
+    const argcharc = p.bounded(p.skip(')', true), endat) catch {
+        return CommandSyntaxError.MissingCommandArg;
+    };
+
+    if (argcharc == 0) return CommandSyntaxError.MissingCommandArg;
+
+    p.push_l1node(cmd_kind, name_start, p.cursor);
+
+    // cursor is on ')', so for push we inc again
+    p.inc();
 
     return .did_not_transition;
 }
