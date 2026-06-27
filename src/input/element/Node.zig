@@ -31,12 +31,6 @@ pub const KindLevel0 = enum(u8) {
 
     NumParenItemLabel,
     NumParenItemText,
-
-    AlphDotItemLabel,
-    AlphDotItemText,
-
-    AlphParenItemLabel,
-    AlphParenItemText,
 };
 
 pub const KindLevel1 = enum(u8) {
@@ -65,6 +59,20 @@ pub const Kind = union(enum) {
 
     pub fn l1(k: KindLevel1) Kind {
         return .{ .L1 = k };
+    }
+
+    pub fn auto(enum_literal: anytype) Kind {
+        inline for (@typeInfo(KindLevel0).@"enum".fields) |f| {
+            if (std.mem.eql(u8, f.name, @tagName(enum_literal))) {
+                return .l0(enum_literal);
+            }
+        }
+        inline for (@typeInfo(KindLevel1).@"enum".fields) |f| {
+            if (std.mem.eql(u8, f.name, @tagName(enum_literal))) {
+                return .l1(enum_literal);
+            }
+        }
+        @compileError("Kind.auto got unexpected enum literal");
     }
 
     pub fn is_l0(self: Kind) bool {

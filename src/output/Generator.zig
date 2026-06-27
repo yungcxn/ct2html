@@ -9,28 +9,50 @@ pub const Effect = union(enum) {
         post: []const u8,
     },
     replace: *const fn (g: *Generator) Error![]const u8,
-    ignore: void,
 
-    pub fn xprepost(pre: []const u8, post: []const u8) Effect {
+    pub fn fprepost(pre: []const u8, post: []const u8) Effect {
         return .{ .prepost = .{ .pre = pre, .post = post } };
     }
-    pub fn xreplace(f: *const fn (g: *Generator) Error![]const u8) Effect {
+    pub fn freplace(f: *const fn (g: *Generator) Error![]const u8) Effect {
         return .{ .replace = f };
     }
-    pub fn xignore() Effect {
-        return .{ .ignore = {} };
-    }
 
-    pub fn eq(self: Effect, other: Effect) bool {
-        return std.mem.eql(u8, @tagName(self), @tagName(other));
+    pub fn auto(val: anytype) Effect {
+        comptime {
+            @setEvalBranchQuota(10_000);
+        }
+
+        return switch (@typeInfo(@TypeOf(val))) {
+            .pointer => |p| switch (@typeInfo(p.child)) {
+                .@"fn" => return freplace(val),
+                .int => fprepost(val, ""),
+                .array => |a| switch (@typeInfo(a.child)) {
+                    .int => fprepost(val, ""),
+                    else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
+                },
+                else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
+            },
+            .array => |a| switch (@typeInfo(a.child)) {
+                .int => fprepost(val, ""),
+                else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
+            },
+            .@"struct" => |s| switch (s.fields.len) {
+                2 => return fprepost(val[0], val[1]),
+                else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
+            },
+            .@"fn" => return freplace(val),
+            else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
+        };
     }
 };
 
 // Nodes carry not only the text boundary but for attributes or commands,
 // sometimes something more complex is needed, therefore a text returning fn
 pub const Rule = struct {
-    pub fn def(k: Node.Kind, effect: Effect) Rule {
-        return .{ .kind = k, .effect = effect };
+
+    // auto to make the definition short and readable
+    pub fn def(autokind: anytype, autoval: anytype) Rule {
+        return @This(){ .kind = .auto(autokind), .effect = Effect.auto(autoval) };
     }
 
     kind: Node.Kind,
@@ -121,7 +143,8 @@ fn error_handle(self: *@This(), n: anytype, err: anyerror) noreturn {
     return std.process.exit(1);
 }
 
-// TODO BUG only doing the first l1 in a l0 block
+// TODO beautify out by indenting
+// TODO io_uring?
 pub fn print_out(self: *@This()) void {
     while (self.pop_node()) |l0node| {
         if (!l0node.kind.is_l0()) continue;
@@ -131,8 +154,10 @@ pub fn print_out(self: *@This()) void {
 
         const l0textpair = switch (rule.effect) {
             .prepost => |pair| pair,
-            .replace => return self.error_handle(l0node, Error.ReplaceRuleNotSupportedForL0Node),
-            .ignore => continue,
+            .replace => return self.error_handle(
+                l0node,
+                Error.ReplaceRuleNotSupportedForL0Node,
+            ),
         };
 
         self.outf.writeStreamingAll(self.io, l0textpair.pre) catch |err|
@@ -172,7 +197,6 @@ pub fn print_out(self: *@This()) void {
                     self.outf.writeStreamingAll(self.io, replacement) catch |err|
                         return self.error_handle(l1node, err);
                 },
-                .ignore => {},
             }
 
             lastpos = l1node.textend + l1_margin[1];

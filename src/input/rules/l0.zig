@@ -10,6 +10,7 @@ pub const attr_nodekind_map = std.StaticStringMap(Node.KindLevel0).initComptime(
     .{ "header", .AttributeHeader },
 });
 
+// TODO better, real VTABLE type to write, define nice enum(int) vtable type
 // every func that is here registered may leave cursor anywhere
 pub const vtable = [_]Parser.Rule{
     .{
@@ -90,20 +91,6 @@ pub const vtable = [_]Parser.Rule{
         .l0_begin = .OrderedListBeginMeta,
         .l0_end = .OrderedListEndMeta,
     },
-
-    .{
-        .trigger = 'a',
-        .apply = &alph_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
-
-    .{
-        .trigger = 'A',
-        .apply = &alph_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
 };
 
 const AttributeSyntaxError = error{
@@ -113,18 +100,19 @@ const AttributeSyntaxError = error{
     MissingValue,
     EmptyAttributeSection,
     UnknownAttributeName,
+    AttributeBlockAtInvalidPosition,
 };
 
 const OrderedItemsSyntaxError = error{
     NotANumberPreSep,
     NonDigitPreSep,
-    NonAlphaPreSep,
     LabelRegionNeverEnded,
     NothingAfterSep,
     NumberRegionNeverEnded,
     TextRegionEndedUnexpectedly,
     NonDigitPreSepOnMultiline,
-    NonAlphaPreSepOnMultiline,
+    SpaceInLabelNotAllowed,
+    UnindentedLineAfterDashItem,
 };
 
 pub const SyntaxError = error{
@@ -134,30 +122,27 @@ pub const SyntaxError = error{
     UnsupportedHeadingLevel,
     WrongAttributeFormat,
     UnindentedLineAfterDashItem,
-    AttributeBlockNotAtStart,
-    UnknownAttributeName,
+    Unhandled,
 } || AttributeSyntaxError || OrderedItemsSyntaxError;
 
 pub fn attributes(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     // attribute block is only allowed if it is the first node in the document
     // since from it we generate structurally important html tags
     // attribute section has a meta node, and before it a root begin node
-    if (p.nodeshead != 2) return SyntaxError.AttributeBlockNotAtStart;
+    if (p.nodeshead != 2) return SyntaxError.AttributeBlockAtInvalidPosition;
 
-    // we assume we are on '!', so we move back
-    p.dec();
+    // we assume we are on '!'
     line: while (p.pop() == '!') {
         _ = p.bounded_skip_whitesp(endat) catch {
             return AttributeSyntaxError.EmptyKey;
         };
-        // cursor is on first char of key
+
         const key_start = p.cursor;
 
-        _ = p.bounded(p.skip(':', true), endat) catch {
-            return AttributeSyntaxError.MissingColon;
-        };
+        p.bounded_find(':', endat) catch return AttributeSyntaxError.MissingColon;
 
-        if (std.mem.containsAtLeast(u8, p.text[key_start..p.cursor], 0, &.{ ' ', '\t' })) {
+        // cursor is on ':', so we check if the keyname is free of whitespace
+        if (!p.bounds_freeof_whitesp(key_start, p.cursor)) {
             return AttributeSyntaxError.SpaceBetweenKeyAndColonNotAllowed;
         }
 
@@ -178,7 +163,7 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
 
         const value_start = p.cursor;
 
-        _ = p.bounded(p.skip('\n', true), endat) catch |e| {
+        p.bounded_find('\n', endat) catch |e| {
             if (e == ParsingError.OutOfBounds) {
                 // last line, so must accept it
                 p.push_l0node(attr_kind, value_start, endat);
@@ -200,7 +185,7 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
 
 // read #'s
 pub fn heading(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
-    const hashtagc: usize = p.skip('#', false) catch {
+    const hashtagc: usize = p.skipc('#') catch {
         return SyntaxError.NothingAfterHeadingHashtags;
     };
     const kind: Node.KindLevel0 = switch (hashtagc) {
@@ -212,11 +197,16 @@ pub fn heading(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
         6 => .Heading6,
         else => return SyntaxError.UnsupportedHeadingLevel,
     };
-    _ = p.bounded(p.skip_whitesp(), endat) catch {
+
+    p.bounded_skip_whitesp(endat) catch {
         return SyntaxError.NothingAfterHeadingHashtags;
     };
+
     // cursor is now at the first char of the heading text, and stays there
-    if (!p.bound_free_of(endat, '\n')) return SyntaxError.NewlineInHeading;
+    if (!p.bounds_freeof(p.cursor, endat, '\n')) {
+        return SyntaxError.NewlineInHeading;
+    }
+
     p.push_l0node(kind, p.cursor, endat);
     return .did_not_transition;
 }
@@ -245,10 +235,8 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
                     continue;
                 },
                 '-' => {
-                    // the next line has a new item, so we end on cursor
-                    // with cursor being on c0_l1
-                    p.dec(); // back to '\n'
-                    p.push_l0node(.DashItem, item_textstart, p.cursor);
+                    // the next line has a new item, so we end on cursor-1=\n
+                    p.push_l0node(.DashItem, item_textstart, p.cursor - 1);
                     continue :outer;
                 },
                 else => {
@@ -263,123 +251,75 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     return .did_not_transition;
 }
 
-// this is special; cursor may be on different letters, e.g. '1' or 'a'
-fn ordered_items(
+pub fn num_items(
     p: *Parser,
-    comptime isdigit: bool,
-    sep: u8,
-    itemlabelkind: Node.KindLevel0,
-    itemtextkind: Node.KindLevel0,
     endat: usize,
 ) SyntaxError!Parser.Rule.ApplyState {
-    // outer: while (true) {
-    //     const label_first = p.cursor;
+    const sep_set = .{ '.', ')' };
+    outer: while (true) {
 
-    //     { // label
-    //         while (true) : (p.cursor += 1) {
-    //             const c = p.text[p.cursor];
-    //             if (c == sep) break; // successful break
+        // first: the label, we exit this block on cursor being sep +1
+        {
+            const labelc = p.bounded_findc(sep_set, endat) catch {
+                return OrderedItemsSyntaxError.NotANumberPreSep;
+            };
+            //cursor is on sep
 
-    //             if (isdigit and !std.ascii.isDigit(c))
-    //                 return OrderedItemsSyntaxError.NonDigitPreSep;
+            if (!p.bounds_freeof_whitesp(p.cursor - labelc, p.cursor)) {
+                return OrderedItemsSyntaxError.SpaceInLabelNotAllowed;
+            }
 
-    //             if (!isdigit and !std.ascii.isAlphabetic(c))
-    //                 return OrderedItemsSyntaxError.NonAlphaPreSep;
+            // we are still on the sep, e.g. '.'
+            const label_kind: Node.KindLevel0 = switch (p.peek().?) {
+                '.' => .NumDotItemLabel,
+                ')' => .NumParenItemLabel,
+                else => unreachable, // since we went for `sep_set`
+            };
 
-    //             if (p.cursor >= endat)
-    //                 return OrderedItemsSyntaxError.LabelRegionNeverEnded;
-    //         }
-    //         // we are on '.', so we can skip it and the following whitespace
-    //         const label_last = p.cursor - 1;
+            p.push_l0node(label_kind, p.cursor - labelc, p.cursor);
 
-    //         // now we have a valid number pre dot, so we push the node
-    //         p.push_l0node(itemlabelkind, label_first, label_last + 1);
-    //     }
+            p.inc();
+        }
 
-    //     { // text
-    //         p.cursor += 1;
+        // second: the text, and we start with cursor on sep +1
+        {
+            _ = p.bounded_skip_whitesp(endat) catch {
+                return OrderedItemsSyntaxError.NothingAfterSep;
+            };
 
-    //         _ = p.bounded_skip_whitesp(endat) catch {
-    //             return OrderedItemsSyntaxError.NothingAfterSep;
-    //         };
+            const text_start = p.cursor;
 
-    //         // now cursor is at first text letter
-    //         const text_start = p.cursor;
-    //         while (p.pop()) |c| {
-    //             if (p.cursor >= endat) { // last item, done
-    //                 p.push_l0node(itemtextkind, text_start, endat);
-    //                 break :outer;
-    //             }
+            while (p.pop()) |c| {
+                if (!p.in_bound(endat)) {
+                    // last node
+                    p.push_l0node(.NumDotItemText, text_start, endat);
+                    break :outer;
+                }
 
-    //             const peeked: u8 = p.peek().?; // safe, checked before this
-    //             if (c == '\n') {
-    //                 // continue if space or tab, else check if its valid label
-    //                 if (peeked == ' ' or peeked == '\t') continue;
-    //                 if (isdigit and !std.ascii.isDigit(peeked))
-    //                     return OrderedItemsSyntaxError.NonDigitPreSepOnMultiline;
+                if (c != '\n') continue;
 
-    //                 if (!isdigit and !std.ascii.isAlphabetic(peeked))
-    //                     return OrderedItemsSyntaxError.NonAlphaPreSepOnMultiline;
-
-    //                 p.push_l0node(itemtextkind, text_start, p.cursor - 1);
-    //                 continue :outer;
-    //             }
-    //         }
-    //     }
-    //     return OrderedItemsSyntaxError.TextRegionEndedUnexpectedly;
-    // }
-    // return .did_not_transition;
-}
-
-pub fn num_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
-    // the rule is: digit(s), then either '.' or ')', if anything wrong -> par
-    // const c_safe = p.cursor;
-    // var c = p.text[p.cursor];
-    // while (true) : (p.cursor += 1) {
-    //     if (c == '.' or c == ')') {
-    //         p.cursor = c_safe;
-    //         return ordered_items(
-    //             p,
-    //             true,
-    //             c,
-    //             if (c == '.') .NumDotItemLabel else .NumParenItemLabel,
-    //             if (c == '.') .NumDotItemText else .NumParenItemText,
-    //             endat,
-    //         );
-    //     }
-    //     if (!std.ascii.isDigit(c)) break;
-    //     c = p.peek() orelse break;
-    // }
-    // p.cursor = c_safe;
-    // return par(p, endat);
-}
-
-pub fn alph_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
-    // the rule is: one alph, then either '.' or ')', if anything wrong -> par
-    // const c_safe = p.cursor;
-    // blk: {
-    //     const first = p.pop() orelse break :blk;
-    //     if (!std.ascii.isAlphabetic(first)) break :blk;
-    //     const sep = p.pop() orelse break :blk;
-    //     if (sep != '.' and sep != ')') break :blk;
-
-    //     p.cursor = c_safe;
-    //     return ordered_items(
-    //         p,
-    //         false,
-    //         sep,
-    //         if (sep == '.') .AlphDotItemLabel else .AlphParenItemLabel,
-    //         if (sep == '.') .AlphDotItemText else .AlphParenItemText,
-    //         endat,
-    //     );
-    // }
-
-    // p.cursor = c_safe;
-    // _ = par(p, endat) catch |err| {
-    //     p.error_handle(err);
-    //     return .errd;
-    // };
-    // return .transitioned_to_p;
+                switch (p.peek() orelse return OrderedItemsSyntaxError.NothingAfterSep) {
+                    ' ', '\t' => {
+                        // through this condition, we allow the next line to be
+                        // part of this item, if it starts anyhow indented
+                        continue;
+                    },
+                    '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
+                        // the next line has a new item, so we end on cursor-1=\n
+                        p.push_l0node(.NumDotItemText, text_start, p.cursor - 1);
+                        continue :outer;
+                    },
+                    else => {
+                        // in this case we forbid something like this:
+                        // \\\1. this-is-some\n
+                        // \\\unindented-text
+                        return OrderedItemsSyntaxError.UnindentedLineAfterDashItem;
+                    },
+                }
+            }
+        }
+    }
+    return .did_not_transition;
 }
 
 // default rule

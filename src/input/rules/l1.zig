@@ -29,6 +29,7 @@ pub const SyntaxError = error{
     NotEnoughAsterisks,
     NotEnoughUnderlines,
     InlineCodeBacktick2NotFound,
+    Unhandled,
 } || CommandSyntaxError;
 
 fn capture_for(
@@ -39,10 +40,10 @@ fn capture_for(
     err: SyntaxError,
 ) SyntaxError!Parser.Rule.ApplyState {
     // we assume cursor pos is +1 after capture
-    const chars_in_capture = p.bounded(p.skip(capture, true), endat) catch {
+    const in_capturec = p.bounded_findc(capture, endat) catch {
         return err;
     };
-    p.push_l1node(k, p.cursor - chars_in_capture, p.cursor);
+    p.push_l1node(k, p.cursor - in_capturec, p.cursor);
 
     // cursor is at second capture now, and on return we must be on +1, such
     // that on next parse iter we pop (pop) the letter after the capture
@@ -61,7 +62,7 @@ fn capture_for_inlevels(
     // we assume cursor pos is on second capture letter, so we move back
     // to cound the capture to get the level
     p.dec();
-    const capturec = p.bounded(p.skip(capture, false), endat) catch {
+    const capturec = p.bounded_skipc(capture, endat) catch {
         return err;
     };
     const text_start = p.cursor;
@@ -80,12 +81,12 @@ fn capture_for_inlevels(
     }
 
     // cursor is at first letter after capture, much like in `capture_for`
-    const chars_in_capture = p.bounded(p.skip(capture, true), endat) catch {
+    const chars_in_capture = p.bounded_findc(capture, endat) catch {
         return err;
     };
 
     // cursor is on the first of the capture, repeat
-    const capturec2 = p.bounded(p.skip(capture, false), endat) catch {
+    const capturec2 = p.bounded_skipc(capture, endat) catch {
         return err;
     };
 
@@ -139,24 +140,24 @@ pub fn command(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     // we only accept commands of type @key(arg), while having cursor on @
     const name_start = p.cursor;
 
-    const namec = p.bounded(p.skip('(', true), endat) catch {
+    const namec = p.bounded_findc('(', endat) catch {
         return CommandSyntaxError.MissingCommandName;
     };
 
     if (namec == 0) return CommandSyntaxError.MissingCommandName;
 
     // cursor is on '('
-    const cmd_name = p.text[name_start..p.cursor];
-    if (std.mem.containsAtLeast(u8, cmd_name, 0, &.{ ' ', '\t' })) {
+    if (!p.bounds_freeof_whitesp(name_start, p.cursor)) {
         return CommandSyntaxError.WhiteSpaceInCommandNameNotAllowed;
     }
 
+    const cmd_name = p.text[name_start..p.cursor];
     const cmd_kind = cmd_nodekind_map.get(cmd_name) orelse {
         return CommandSyntaxError.UnknownCommandName;
     };
 
     p.inc(); // cursor is now on first letter of arg
-    const argcharc = p.bounded(p.skip(')', true), endat) catch {
+    const argcharc = p.bounded_findc(')', endat) catch {
         return CommandSyntaxError.MissingCommandArg;
     };
 

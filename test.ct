@@ -7,7 +7,7 @@ and **multi-line-
 --italic**.
 
 How about some _strikethrough_ text, and some __strikethrough-bold__ text?
-and some __strikethrough-italic__ text, and some ___strikethough-bold-italic___ text?
+and some ___strikethrough-italic___ text, and some ____strikethough-bold-italic____ text?
 
 And again some ***both***.
 
@@ -45,9 +45,6 @@ o
 
 The end before the end.
 
-1. Numerical list
-
-1. Again 
 
 1. Usual list
 2. Item2
@@ -66,17 +63,9 @@ The end before the end.
 3) multi-
    line
 
-A) some
-B) text
+1. Numerical list
 
-a. more-
-   text
-b. e
-C. f
-yy.gh
-   ij
-
-
+1. Again 
 
 The end!
 

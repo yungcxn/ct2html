@@ -11,13 +11,14 @@ pub const ParsingError = error{
     InvalidSyntax,
     OutOfBounds,
     BoundNotFreeOf,
+    Unhandled,
 };
 
+// TODO split up
 pub const Rule = struct {
     pub const ApplyState = enum(u8) {
         transitioned_to_p,
         did_not_transition,
-        errd,
     };
 
     trigger: ?u8 = null,
@@ -75,12 +76,13 @@ fn find_line_bounds(self: *@This()) struct { usize, usize } {
     // we expect to hit EOF, and since this is a generator function,
     // we return null on end instead of propagating the error
     var rbound_available = true;
-    _ = self.skip_whitesp() catch {
+    self.skip_whitesp() catch {
         rbound_available = false;
     };
 
-    while (self.back()) |c| {
-        if (c == '\n') {
+    while (self.cursor > 0) {
+        self.dec();
+        if (self.peek().? == '\n') {
             self.cursor += 1;
             break;
         }
@@ -115,105 +117,110 @@ fn get_line_col(self: *@This()) struct { usize, usize } {
     return .{ line, col };
 }
 
-fn find_l0rule_at_cursor(self: *@This()) ?Rule {
-    const c = self.peek().?;
-    inline for (rules_l0.vtable) |rule| {
-        if (c == rule.trigger) return rule;
-    }
-    return null;
-}
-
 // assume cursor is at the start of the block, and blockend is the end of the block
 fn l0_parse_block(
     self: *@This(),
     l0rule: Parser.Rule,
     endat: usize,
-) Parser.Rule.ApplyState {
-    return l0rule.apply(self, endat) catch |err| {
-        self.error_handle(err);
-        return .errd;
-    };
+) SyntaxError!Parser.Rule.ApplyState {
+    return l0rule.apply(self, endat);
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
 // but cursor must be preserved after each func since it may move if the rule needs the cursor to
-fn l1_parse_inblock(self: *@This(), blockend: usize) Parser.Rule.ApplyState {
+fn l1_parse_inblock(self: *@This(), blockend: usize) SyntaxError!void {
     while (self.pop()) |c| {
         if (self.cursor >= blockend) break;
         inline for (rules_l1.rules) |rule| {
             if (c == rule.trigger) {
-                return rule.apply(self, blockend) catch |err| {
-                    self.error_handle(err);
-                    return .errd;
-                };
+                _ = try rule.apply(self, blockend); // TODO
             }
         }
     }
-    return .errd;
 }
 
-fn find_blockend(self: *@This()) ?usize {
-    const start = self.cursor;
+// returns blockend, sends cursor to first block sign.
+fn align_for_block(self: *@This()) ?usize {
+    // empty block if there was only whitespave between cursor and EOF
+    self.skip_whitesp() catch return null;
 
-    while (self.pop()) |c| {
-        if (c != '\n') continue;
-        const next = self.peek() orelse break;
-        if (next == '\n') {
-            const end = self.cursor - 1;
-            self.cursor = start;
-            return end;
+    // block is now beginning
+    const block_start = self.cursor;
+    defer self.cursor = block_start;
+
+    while (true) {
+        self.find('\n') catch |err| switch (err) {
+            ParsingError.EOF => {
+                // this means, we did not find a '\n' and the file ended, and
+                // cursor is out of bounds, but only for one char. so we
+                // can return it since it's for an exclusive capture
+                return self.cursor;
+            },
+            else => unreachable,
+        };
+        // cursor is now on '\n'
+        self.inc();
+        // now on first char on next line
+
+        if ((self.peek() orelse return self.cursor) == '\n') {
+            // double empty-line -> block end
+            return self.cursor - 1; // first '\n', exclusive
         }
-    }
 
-    const end = self.text.len;
-    self.cursor = start;
-    return end;
+        // next iter: since we checked the next line's start, we go to its end
+    }
 }
 
 pub fn build_nodes(self: *@This()) void {
     self.push_meta_l0node(.BeginMeta);
 
-    while (self.find_blockend()) |blockend| {
+    while (self.align_for_block()) |blockend| {
         const cursor_before = self.cursor;
-        const l0rule = self.find_l0rule_at_cursor() orelse rules_l0.vtable[0];
+        const l0_capture_c = self.peek().?;
 
-        {
-            var apply_state: Rule.ApplyState = undefined;
+        // cursor is at the first char of the block
 
-            if (l0rule.l0_begin) |kind| self.push_meta_l0node(kind);
-
-            defer if (l0rule.l0_end) |kind| {
-                if (apply_state == .did_not_transition) {
-                    self.push_meta_l0node(kind);
-                }
-            };
-
-            apply_state = self.l0_parse_block(l0rule, blockend);
-
-            switch (apply_state) {
-                .transitioned_to_p => {
-                    // we pushed to head-1 the p node, and not yet l1 nodes
-                    // so if we had a l0_begin pushed node, we must replace it
-                    // by the p node and reset cursor by -1
-                    if (l0rule.l0_begin) |_| {
-                        const last_pnode = self.nodes[self.nodeshead - 1];
-                        self.nodes[self.nodeshead - 2] = last_pnode;
-                        self.nodeshead -= 1;
-                    }
-                },
-                .did_not_transition => {}, // good
-                .errd => return self.error_handle(ParsingError.InvalidSyntax),
-            }
-
-            if (l0rule.rescan_for_l1) {
-                self.cursor = cursor_before; // restart the block scanning now
-                _ = self.l1_parse_inblock(blockend); // TODO
-                self.cursor = blockend;
-            }
+        var l0_rule = rules_l0.vtable[0]; // default rule, should be a paragraph
+        inline for (rules_l0.vtable) |rule| {
+            if (l0_capture_c == rule.trigger) l0_rule = rule;
         }
-        // skip \n\n
-        self.inc();
-        self.inc();
+
+        if (l0_rule.l0_begin) |kind| self.push_meta_l0node(kind);
+
+        const l0_apply_state = self.l0_parse_block(
+            l0_rule,
+            blockend,
+        ) catch |err| return self.error_handle(err);
+
+        switch (l0_apply_state) {
+            .transitioned_to_p => {
+                // we pushed to head-1 the p node, and not yet l1 nodes
+                // so if we had a l0_begin pushed node, we must replace it
+                // by the p node and reset cursor by -1
+                if (l0_rule.l0_begin) |_| {
+                    const last_pnode = self.nodes[self.nodeshead - 1];
+                    self.nodes[self.nodeshead - 2] = last_pnode;
+                    self.nodeshead -= 1;
+                }
+            },
+            .did_not_transition => {}, // good
+        }
+
+        // reset cursor to scan for l1 rules
+        if (l0_rule.rescan_for_l1) {
+            self.cursor = cursor_before;
+
+            self.l1_parse_inblock(blockend) catch |err| {
+                return self.error_handle(err);
+            };
+        }
+
+        // l0 and l1 is done, now we can end with the optional l0_end node
+        if (l0_apply_state == .did_not_transition) {
+            if (l0_rule.l0_end) |kind| self.push_meta_l0node(kind);
+        }
+
+        self.cursor = blockend;
     }
 
     self.push_meta_l0node(.EndMeta);
@@ -254,7 +261,6 @@ pub fn push_meta_l0node(self: *@This(), kind: Node.KindLevel0) void {
     self.push_node(Node{ .kind = .l0(kind), .textstart = 0, .textend = 0 });
 }
 
-/// cursor helpers /////////////////////////////////////////////////////////////
 pub inline fn inc(self: *@This()) void {
     self.cursor += 1;
 }
@@ -268,97 +274,108 @@ pub inline fn in_bound(self: *@This(), endat: usize) bool {
 }
 
 pub inline fn peek(self: *@This()) ?u8 {
-    if (self.in_bound(self.text.len)) return null;
+    if (!self.in_bound(self.text.len)) return null;
     return self.text[self.cursor];
 }
 
 pub inline fn pop(self: *@This()) ?u8 {
+    if (!self.in_bound(self.text.len)) return null;
     defer self.inc();
-    return self.peek();
-}
-
-// we return on cursor being on the first non-c char
-pub inline fn skip(self: *@This(), c: u8, comptime reverse_cond: bool) ParsingError!usize {
-    const cs = self.cursor;
-    while (self.peek()) |p| : (self.inc()) {
-        if (comptime reverse_cond) {
-            if (p == c) return self.cursor - cs;
-        } else {
-            if (p != c) return self.cursor - cs;
-        }
-    }
-
-    return ParsingError.EOF;
-}
-
-pub inline fn skip_set(
-    self: *@This(),
-    set: anytype,
-    comptime reverse_cond: bool,
-) ParsingError!usize {
-    const cs = self.cursor;
-    while (self.peek()) |p| : (self.inc()) {
-        // reverse_cond=false => we skip on set, meaning we think we're on until !=
-        // reverse_cond=true => we are not on set until we are on it
-        var on_set = !reverse_cond;
-        inline for (set) |s| {
-            if (reverse_cond) {
-                if (p == s) on_set = true;
-            } else {
-                if (p != s) on_set = false;
-            }
-        }
-        if (reverse_cond == on_set) return self.cursor - cs;
-    }
-
-    return ParsingError.EOF;
-}
-
-pub inline fn skip_whitesp(self: *@This()) ParsingError!usize {
-    return self.skip_set(.{ ' ', '\t', '\n', '\r' }, false);
-}
-pub inline fn bounded(
-    self: *@This(),
-    retval: anytype,
-    endat: usize,
-) ParsingError!(switch (@typeInfo(@TypeOf(retval))) {
-    .error_union => |e| e.payload,
-    else => @TypeOf(retval),
-}) {
-    // retval got evaluated; cursor may or may not be out of endat now
-    if (!self.in_bound(endat)) {
-        self.cursor = endat;
-        return ParsingError.OutOfBounds;
-    }
-    return retval;
-}
-
-pub inline fn bounded_skip_whitesp(
-    self: *@This(),
-    endat: usize,
-) ParsingError!usize {
-    return self.bounded(self.skip_whitesp(), endat);
-}
-
-pub inline fn back(self: *@This()) ?u8 {
-    if (self.cursor == 0) return null;
-    self.cursor -= 1;
     return self.text[self.cursor];
 }
 
-// does only the check, not advancing cursor
-pub fn bound_free_of_set(self: *@This(), endat: usize, forbiddenset: anytype) bool {
+inline fn eq_any(c: u8, val: anytype) bool {
+    if (@TypeOf(val) == u8 or @TypeOf(val) == comptime_int) return c == val;
+
+    inline for (val) |s| {
+        if (c == s) return true;
+    }
+    return false;
+}
+
+inline fn eq_none(c: u8, val: anytype) bool {
+    if (@TypeOf(val) == u8 or @TypeOf(val) == comptime_int) return c != val;
+
+    inline for (val) |s| {
+        if (c == s) return false;
+    }
+    return true;
+}
+
+pub inline fn skip(self: *@This(), val: anytype) ParsingError!void {
+    while (self.peek()) |p| : (self.inc()) {
+        if (eq_none(p, val)) return;
+    }
+    return ParsingError.EOF;
+}
+pub inline fn bounded_skip(self: *@This(), val: anytype, endat: usize) ParsingError!void {
+    try self.skip(val);
+    if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
+}
+
+pub inline fn find(self: *@This(), val: anytype) ParsingError!void {
+    while (self.peek()) |p| : (self.inc()) {
+        if (eq_any(p, val)) return;
+    }
+    return ParsingError.EOF;
+}
+pub inline fn bounded_find(self: *@This(), val: anytype, endat: usize) ParsingError!void {
+    try self.find(val);
+    if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
+}
+
+pub inline fn skipc(self: *@This(), val: anytype) ParsingError!usize {
+    const cs = self.cursor;
+    while (self.peek()) |p| : (self.inc()) {
+        if (eq_none(p, val)) return self.cursor - cs;
+    }
+    return ParsingError.EOF;
+}
+pub inline fn bounded_skipc(self: *@This(), val: anytype, endat: usize) ParsingError!usize {
+    const count = try self.skipc(val);
+    if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
+    return count;
+}
+
+pub inline fn findc(self: *@This(), val: anytype) ParsingError!usize {
+    const cs = self.cursor;
+    while (self.peek()) |p| : (self.inc()) {
+        if (eq_any(p, val)) return self.cursor - cs;
+    }
+    return ParsingError.EOF;
+}
+pub inline fn bounded_findc(self: *@This(), val: anytype, endat: usize) ParsingError!usize {
+    const count = try self.findc(val);
+    if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
+    return count;
+}
+
+pub inline fn skip_whitesp(self: *@This()) ParsingError!void {
+    try self.skip(.{ ' ', '\t', '\r', '\n' });
+}
+pub inline fn bounded_skip_whitesp(self: *@This(), endat: usize) ParsingError!void {
+    try self.skip_whitesp();
+    if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
+}
+
+pub fn bounds_freeof(self: *@This(), startat: usize, endat: usize, c: anytype) bool {
     const cursor_save = self.cursor;
+    self.cursor = startat;
     defer self.cursor = cursor_save;
-    while (self.peek()) |c| : (self.inc()) {
-        if (!self.in_bound(endat)) return false;
-        inline for (forbiddenset) |s| {
-            if (c == s) return false;
+
+    while (self.peek()) |p| : (self.inc()) {
+        if (!self.in_bound(endat)) return true;
+        if (@TypeOf(c) == u8 or @TypeOf(c) == comptime_int) {
+            if (p == c) return false;
+        } else {
+            inline for (c) |s| {
+                if (p == s) return false;
+            }
         }
     }
     return true;
 }
 
-pub fn bound_free_of(self: *@This(), endat: usize, skipc: u8) bool {
-    return self.bound_free_of_set(endat, .{skipc});
+pub fn bounds_freeof_whitesp(self: *@This(), startat: usize, endat: usize) bool {
+    return self.bounds_freeof(startat, endat, .{ ' ', '\t', '\r', '\n' });
 }

@@ -56,6 +56,7 @@ pub fn main(init: std.process.Init) void {
     defer parser.deinit();
 
     parser.build_nodes();
+    parser.debug_print();
 
     var generator = Generator.init(
         arena.allocator(),
