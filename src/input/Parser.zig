@@ -1,10 +1,10 @@
 const std = @import("std");
-const Node = @import("element/Node.zig");
+const Node = @import("../element/Node.zig");
 const Parser = @This();
 
-const rules_l0 = @import("rules/l0.zig");
-const rules_l1 = @import("rules/l1.zig");
-const SyntaxError = rules_l0.SyntaxError || rules_l1.SyntaxError;
+const l0_rules = @import("l0_rules.zig");
+const l1_rules = @import("l1_rules.zig");
+const AllSyntaxErrors = l0_rules.SyntaxError || l1_rules.SyntaxError;
 
 pub const ParsingError = error{
     EOF,
@@ -14,24 +14,9 @@ pub const ParsingError = error{
     Unhandled,
 };
 
-// TODO split up
-pub const Rule = struct {
-    pub const ApplyState = enum(u8) {
-        transitioned_to_p,
-        did_not_transition,
-    };
-
-    trigger: ?u8 = null,
-    apply: *const fn (*Parser, usize) SyntaxError!ApplyState, //
-    rescan_for_l1: bool = true, // could l1 rules be applied in this block?
-
-    l0_begin: ?Node.KindLevel0 = null,
-    l0_end: ?Node.KindLevel0 = null,
-};
-
 alloc: std.mem.Allocator,
 text: []const u8,
-cursor: usize,
+cursor: usize, // TODO we should provide a second cursor that replaces endat..
 nodes: []Node,
 nodeshead: usize,
 
@@ -118,21 +103,12 @@ fn get_line_col(self: *@This()) struct { usize, usize } {
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
-fn l0_parse_block(
-    self: *@This(),
-    l0rule: Parser.Rule,
-    endat: usize,
-) SyntaxError!Parser.Rule.ApplyState {
-    return l0rule.apply(self, endat);
-}
-
-// assume cursor is at the start of the block, and blockend is the end of the block
 // but cursor must be preserved after each func since it may move if the rule needs the cursor to
-fn l1_parse_inblock(self: *@This(), blockend: usize) SyntaxError!void {
+fn l1_parse_inblock(self: *@This(), blockend: usize) l1_rules.SyntaxError!void {
     while (self.pop()) |c| {
         if (self.cursor >= blockend) break;
-        inline for (rules_l1.rules) |rule| {
-            if (c == rule.trigger) {
+        inline for (l1_rules.def) |rule| {
+            if (rule.in_triggers(c)) {
                 _ = try rule.apply(self, blockend); // TODO
             }
         }
@@ -172,7 +148,7 @@ fn align_for_block(self: *@This()) ?usize {
 }
 
 pub fn build_nodes(self: *@This()) void {
-    self.push_meta_l0node(.BeginMeta);
+    self.push_node(.begin, null);
 
     while (self.align_for_block()) |blockend| {
         const cursor_before = self.cursor;
@@ -180,20 +156,21 @@ pub fn build_nodes(self: *@This()) void {
 
         // cursor is at the first char of the block
 
-        var l0_rule = rules_l0.vtable[0]; // default rule, should be a paragraph
-        inline for (rules_l0.vtable) |rule| {
-            if (l0_capture_c == rule.trigger) l0_rule = rule;
+        var l0_rule = l0_rules.def[0]; // default rule, should be a paragraph
+        inline for (l0_rules.def) |rule| {
+            if (rule.in_triggers(l0_capture_c)) l0_rule = rule;
         }
 
-        if (l0_rule.l0_begin) |kind| self.push_meta_l0node(kind);
+        if (l0_rule.l0_begin) |kind| {
+            self.push_node(kind, null);
+        }
 
-        const l0_apply_state = self.l0_parse_block(
-            l0_rule,
-            blockend,
-        ) catch |err| return self.error_handle(err);
+        const l0_apply_state = l0_rule.apply(self, blockend) catch |err| {
+            return self.error_handle(err);
+        };
 
         switch (l0_apply_state) {
-            .transitioned_to_p => {
+            .transitioned => {
                 // we pushed to head-1 the p node, and not yet l1 nodes
                 // so if we had a l0_begin pushed node, we must replace it
                 // by the p node and reset cursor by -1
@@ -203,11 +180,11 @@ pub fn build_nodes(self: *@This()) void {
                     self.nodeshead -= 1;
                 }
             },
-            .did_not_transition => {}, // good
+            .success => {}, // good
         }
 
         // reset cursor to scan for l1 rules
-        if (l0_rule.rescan_for_l1) {
+        if (l0_rule.l1_rescan) {
             self.cursor = cursor_before;
 
             self.l1_parse_inblock(blockend) catch |err| {
@@ -216,20 +193,23 @@ pub fn build_nodes(self: *@This()) void {
         }
 
         // l0 and l1 is done, now we can end with the optional l0_end node
-        if (l0_apply_state == .did_not_transition) {
-            if (l0_rule.l0_end) |kind| self.push_meta_l0node(kind);
+        if (l0_apply_state == .success) {
+            if (l0_rule.l0_end) |kind| {
+                self.push_node(kind, null);
+            }
         }
 
         self.cursor = blockend;
     }
 
-    self.push_meta_l0node(.EndMeta);
+    self.push_node(.end, null);
 }
 
 pub fn debug_print(self: @This()) void {
     std.debug.print("Nodes:\n", .{});
     for (self.nodes[0..self.nodeshead], 0..) |node, idx| {
-        const text = self.text[node.textstart..node.textend];
+        var text: []const u8 = "";
+        if (node.span) |s| text = self.text[s.start..s.end];
         std.debug.print(
             "{d}: {any}\n   [{s}]\n\n",
             .{ idx, node.kind, text },
@@ -237,7 +217,7 @@ pub fn debug_print(self: @This()) void {
     }
 }
 
-fn push_node(self: *@This(), node: Node) void {
+pub fn push_node(self: *@This(), kind: Node.Kind, span: ?Node.Span) void {
     if (self.nodeshead >= self.nodes.len) {
         const newlen = self.nodes.len * 2;
         const newnodes = self.alloc.realloc(self.nodes, newlen) catch |err| {
@@ -245,20 +225,8 @@ fn push_node(self: *@This(), node: Node) void {
         };
         self.nodes = newnodes;
     }
-    self.nodes[self.nodeshead] = node;
+    self.nodes[self.nodeshead] = Node{ .kind = kind, .span = span };
     self.nodeshead += 1;
-}
-
-pub fn push_l0node(self: *@This(), kind: Node.KindLevel0, textstart: usize, textend: usize) void {
-    self.push_node(Node{ .kind = .l0(kind), .textstart = textstart, .textend = textend });
-}
-
-pub fn push_l1node(self: *@This(), kind: Node.KindLevel1, textstart: usize, textend: usize) void {
-    self.push_node(Node{ .kind = .l1(kind), .textstart = textstart, .textend = textend });
-}
-
-pub fn push_meta_l0node(self: *@This(), kind: Node.KindLevel0) void {
-    self.push_node(Node{ .kind = .l0(kind), .textstart = 0, .textend = 0 });
 }
 
 pub inline fn inc(self: *@This()) void {

@@ -2,94 +2,36 @@
 
 const std = @import("std");
 const Node = @import("../element/Node.zig");
-const Parser = @import("../Parser.zig");
+const Parser = @import("Parser.zig");
+const Rule = @import("../element/Rule.zig");
 const ParsingError = Parser.ParsingError;
-
-pub const attr_nodekind_map = std.StaticStringMap(Node.KindLevel0).initComptime(.{
-    .{ "style", .AttributeStyle },
-    .{ "header", .AttributeHeader },
-});
 
 // TODO better, real VTABLE type to write, define nice enum(int) vtable type
 // every func that is here registered may leave cursor anywhere
-pub const vtable = [_]Parser.Rule{
+
+// .def TODO
+pub const def = [_]Rule.L0{
+    .{ .triggers = null, .apply = &par },
+    .{ .triggers = &.{'\\'}, .apply = &par },
+    .{ .triggers = &.{'#'}, .apply = &heading },
     .{
-        .apply = &par,
-    },
-    .{ // force paragraph, if first char is some trigger
-        .trigger = '\\',
-        .apply = &par,
-    },
-    .{
-        .trigger = '#',
-        .apply = &heading,
-    },
-    .{
-        .trigger = '-',
+        .triggers = &.{'-'},
         .apply = &dash_items,
-        .l0_begin = .UnorderedListBeginMeta,
-        .l0_end = .UnorderedListEndMeta,
+        .l0_begin = .unordered_list_begin,
+        .l0_end = .unordered_list_end,
     },
     .{
-        .trigger = '!',
+        .triggers = &.{ '1', '2', '3', '4', '5', '6', '7', '8', '9' },
+        .apply = &num_items,
+        .l0_begin = .ordered_list_begin,
+        .l0_end = .ordered_list_end,
+    },
+    .{
+        .triggers = &.{'!'},
         .apply = &attributes,
-        .rescan_for_l1 = false,
-        .l0_begin = .AttributeBeginMeta,
-        .l0_end = .AttributeEndMeta,
-    },
-    .{
-        .trigger = '1',
-        .apply = &num_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
-    .{
-        .trigger = '2',
-        .apply = &num_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
-    .{
-        .trigger = '3',
-        .apply = &num_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
-    .{
-        .trigger = '4',
-        .apply = &num_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
-    .{
-        .trigger = '5',
-        .apply = &num_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
-    .{
-        .trigger = '6',
-        .apply = &num_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
-    .{
-        .trigger = '7',
-        .apply = &num_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
-    .{
-        .trigger = '8',
-        .apply = &num_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
-    },
-    .{
-        .trigger = '9',
-        .apply = &num_items,
-        .l0_begin = .OrderedListBeginMeta,
-        .l0_end = .OrderedListEndMeta,
+        .l0_begin = .attribute_begin,
+        .l0_end = .attribute_end,
+        .l1_rescan = false,
     },
 };
 
@@ -125,7 +67,7 @@ pub const SyntaxError = error{
     Unhandled,
 } || AttributeSyntaxError || OrderedItemsSyntaxError;
 
-pub fn attributes(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
+pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
     // attribute block is only allowed if it is the first node in the document
     // since from it we generate structurally important html tags
     // attribute section has a meta node, and before it a root begin node
@@ -146,11 +88,10 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
             return AttributeSyntaxError.SpaceBetweenKeyAndColonNotAllowed;
         }
 
-        const attr_kind = attr_nodekind_map.get(
+        const attr_kind = std.meta.stringToEnum(
+            Node.Kind,
             p.text[key_start..p.cursor],
-        ) orelse {
-            return AttributeSyntaxError.UnknownAttributeName;
-        };
+        ) orelse return AttributeSyntaxError.UnknownAttributeName;
 
         // cursor is at ':'...
         p.inc();
@@ -166,7 +107,7 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
         p.bounded_find('\n', endat) catch |e| {
             if (e == ParsingError.OutOfBounds) {
                 // last line, so must accept it
-                p.push_l0node(attr_kind, value_start, endat);
+                p.push_node(attr_kind, .{ .start = value_start, .end = endat });
                 break :line;
             } else {
                 return AttributeSyntaxError.MissingValue;
@@ -174,27 +115,27 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
         };
 
         // cursor is on '\n'
-        p.push_l0node(attr_kind, value_start, p.cursor);
+        p.push_node(attr_kind, .{ .start = value_start, .end = p.cursor });
     }
 
     // we check if we even produced anything
     if (p.nodeshead == 2) return AttributeSyntaxError.EmptyAttributeSection;
 
-    return .did_not_transition;
+    return .success;
 }
 
 // read #'s
-pub fn heading(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
+pub fn heading(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
     const hashtagc: usize = p.skipc('#') catch {
         return SyntaxError.NothingAfterHeadingHashtags;
     };
-    const kind: Node.KindLevel0 = switch (hashtagc) {
-        1 => .Heading1,
-        2 => .Heading2,
-        3 => .Heading3,
-        4 => .Heading4,
-        5 => .Heading5,
-        6 => .Heading6,
+    const kind: Node.Kind = switch (hashtagc) {
+        1 => .heading1,
+        2 => .heading2,
+        3 => .heading3,
+        4 => .heading4,
+        5 => .heading5,
+        6 => .heading6,
         else => return SyntaxError.UnsupportedHeadingLevel,
     };
 
@@ -206,12 +147,11 @@ pub fn heading(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
     if (!p.bounds_freeof(p.cursor, endat, '\n')) {
         return SyntaxError.NewlineInHeading;
     }
-
-    p.push_l0node(kind, p.cursor, endat);
-    return .did_not_transition;
+    p.push_node(kind, .{ .start = p.cursor, .end = endat });
+    return .success;
 }
 
-pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
+pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
     outer: while (true) {
         p.inc(); // skip '-'
         _ = p.bounded_skip_whitesp(endat) catch return SyntaxError.EmptyItem;
@@ -222,7 +162,7 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
         while (p.pop()) |c| {
             if (!p.in_bound(endat)) {
                 // last node
-                p.push_l0node(.DashItem, item_textstart, endat);
+                p.push_node(.dash_item, .{ .start = item_textstart, .end = endat });
                 break :outer;
             }
 
@@ -236,7 +176,7 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
                 },
                 '-' => {
                     // the next line has a new item, so we end on cursor-1=\n
-                    p.push_l0node(.DashItem, item_textstart, p.cursor - 1);
+                    p.push_node(.dash_item, .{ .start = item_textstart, .end = p.cursor - 1 });
                     continue :outer;
                 },
                 else => {
@@ -248,13 +188,10 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
             }
         }
     }
-    return .did_not_transition;
+    return .success;
 }
 
-pub fn num_items(
-    p: *Parser,
-    endat: usize,
-) SyntaxError!Parser.Rule.ApplyState {
+pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
     const sep_set = .{ '.', ')' };
     outer: while (true) {
 
@@ -270,14 +207,13 @@ pub fn num_items(
             }
 
             // we are still on the sep, e.g. '.'
-            const label_kind: Node.KindLevel0 = switch (p.peek().?) {
-                '.' => .NumDotItemLabel,
-                ')' => .NumParenItemLabel,
+            const label_kind: Node.Kind = switch (p.peek().?) {
+                '.' => .num_dot_item_label,
+                ')' => .num_paren_item_label,
                 else => unreachable, // since we went for `sep_set`
             };
 
-            p.push_l0node(label_kind, p.cursor - labelc, p.cursor);
-
+            p.push_node(label_kind, .{ .start = p.cursor - labelc, .end = p.cursor });
             p.inc();
         }
 
@@ -292,7 +228,7 @@ pub fn num_items(
             while (p.pop()) |c| {
                 if (!p.in_bound(endat)) {
                     // last node
-                    p.push_l0node(.NumDotItemText, text_start, endat);
+                    p.push_node(.num_dot_item_text, .{ .start = text_start, .end = endat });
                     break :outer;
                 }
 
@@ -306,7 +242,10 @@ pub fn num_items(
                     },
                     '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
                         // the next line has a new item, so we end on cursor-1=\n
-                        p.push_l0node(.NumDotItemText, text_start, p.cursor - 1);
+                        p.push_node(
+                            .num_dot_item_text,
+                            .{ .start = text_start, .end = p.cursor - 1 },
+                        );
                         continue :outer;
                     },
                     else => {
@@ -319,11 +258,11 @@ pub fn num_items(
             }
         }
     }
-    return .did_not_transition;
+    return .success;
 }
 
 // default rule
-pub fn par(p: *Parser, endat: usize) SyntaxError!Parser.Rule.ApplyState {
-    p.push_l0node(.Paragraph, p.cursor, endat);
-    return .did_not_transition;
+pub fn par(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
+    p.push_node(.paragraph, .{ .start = p.cursor, .end = endat });
+    return .success;
 }

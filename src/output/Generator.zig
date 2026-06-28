@@ -1,75 +1,15 @@
 const std = @import("std");
-const Generator = @This();
-const Node = @import("../input/element/Node.zig");
-const rules_html = @import("rules/html.zig");
-
-pub const Effect = union(enum) {
-    prepost: struct {
-        pre: []const u8,
-        post: []const u8,
-    },
-    replace: *const fn (g: *Generator) Error![]const u8,
-
-    pub fn fprepost(pre: []const u8, post: []const u8) Effect {
-        return .{ .prepost = .{ .pre = pre, .post = post } };
-    }
-    pub fn freplace(f: *const fn (g: *Generator) Error![]const u8) Effect {
-        return .{ .replace = f };
-    }
-
-    pub fn auto(val: anytype) Effect {
-        comptime {
-            @setEvalBranchQuota(10_000);
-        }
-
-        return switch (@typeInfo(@TypeOf(val))) {
-            .pointer => |p| switch (@typeInfo(p.child)) {
-                .@"fn" => return freplace(val),
-                .int => fprepost(val, ""),
-                .array => |a| switch (@typeInfo(a.child)) {
-                    .int => fprepost(val, ""),
-                    else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
-                },
-                else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
-            },
-            .array => |a| switch (@typeInfo(a.child)) {
-                .int => fprepost(val, ""),
-                else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
-            },
-            .@"struct" => |s| switch (s.fields.len) {
-                2 => return fprepost(val[0], val[1]),
-                else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
-            },
-            .@"fn" => return freplace(val),
-            else => @compileError("unexpected " ++ @typeName(@TypeOf(val))),
-        };
-    }
-};
-
-// Nodes carry not only the text boundary but for attributes or commands,
-// sometimes something more complex is needed, therefore a text returning fn
-pub const Rule = struct {
-
-    // auto to make the definition short and readable
-    pub fn def(autokind: anytype, autoval: anytype) Rule {
-        return @This(){ .kind = .auto(autokind), .effect = Effect.auto(autoval) };
-    }
-
-    kind: Node.Kind,
-    effect: Effect,
-};
-
-// MetaNodes just carry a kind and a before, so it should suffice to just have a
-// single string that we map to the node kind
+const Node = @import("../element/Node.zig");
+const html_rules = @import("html_rules.zig");
+const Rule = @import("../element/Rule.zig");
 
 pub const Error = error{
     OOM,
     ExpectedL0NodeGotL1,
     L0NodeNotFound,
-    NoEffectForL0NodeRule,
-    ReplaceRuleNotSupportedForL0Node,
-    NoMetaRuleForKind,
-    L1MarginNotFound,
+    NoL0RuleForKind,
+    NoL1RuleForKind,
+    UnsupportedL0RuleAlgo,
 };
 
 // arena so we destroy all of the strings at once
@@ -83,7 +23,7 @@ nodes: []Node,
 nodec: usize,
 
 nodecursor: usize = 0,
-outf: std.Io.File,
+outf: std.Io.File, // TODO staging mem buf
 
 pub fn init(
     arenabase: std.mem.Allocator,
@@ -139,7 +79,7 @@ fn push_chunk_new(self: *@This(), newchunk: []const u8) void {
 
 fn error_handle(self: *@This(), n: anytype, err: anyerror) noreturn {
     _ = self;
-    std.log.err("Generating for node {s}: {s}", .{ n.kind.name(), @errorName(err) });
+    std.log.err("Generating for node {s}: {s}", .{ @tagName(n.kind), @errorName(err) });
     return std.process.exit(1);
 }
 
@@ -149,63 +89,106 @@ pub fn print_out(self: *@This()) void {
     while (self.pop_node()) |l0node| {
         if (!l0node.kind.is_l0()) continue;
 
-        const rule: Rule = rules_html.rule_by_kind(l0node.kind) catch
-            return self.error_handle(l0node, Error.NoEffectForL0NodeRule);
+        var l0rule: ?Rule.Gen = null;
+        for (html_rules.def) |r| {
+            if (r.kind == l0node.kind) {
+                l0rule = r;
+                break;
+            }
+        }
 
-        const l0textpair = switch (rule.effect) {
-            .prepost => |pair| pair,
-            .replace => return self.error_handle(
+        if (l0rule == null) {
+            return self.error_handle(l0node, Error.NoL0RuleForKind);
+        }
+
+        const l0pretext = switch (l0rule.?.algo) {
+            .prepost => |pair| pair.pre,
+            .text => |text| text,
+            else => return self.error_handle(
                 l0node,
-                Error.ReplaceRuleNotSupportedForL0Node,
+                Error.UnsupportedL0RuleAlgo,
             ),
         };
 
-        self.outf.writeStreamingAll(self.io, l0textpair.pre) catch |err|
-            return self.error_handle(l0node, err);
+        self.outf.writeStreamingAll(
+            self.io,
+            l0pretext,
+        ) catch |err| return self.error_handle(l0node, err);
 
-        var lastpos = l0node.textstart;
+        // if the l0 node does not contain text, e.g. a section begin node,
+        // that is just used for semantic segregation of text blocks, it is
+        // not able to contain l1 nodes, since it does not contain text
+        if (l0node.span == null) continue;
+
+        var lastpos = l0node.span.?.start;
 
         l1loop: while (self.peek_node()) |l1node| : (self.nodecursor += 1) {
             if (l1node.kind.is_l0()) break :l1loop;
 
-            const l1_margin = rules_html.l1_margins.get(l1node.kind.L1) orelse
-                return self.error_handle(l1node, Error.L1MarginNotFound);
+            const l1_margin = l1node.kind.l1_margin();
+            std.log.debug("l1_margin: {d}, {d}", .{ l1_margin[0], l1_margin[1] });
 
-            if (l1node.textstart < lastpos or l1node.textend > l0node.textend) {
+            if (l1node.span.?.start < lastpos or l1node.span.?.end > l0node.span.?.end) {
                 continue :l1loop;
             }
 
-            const pre_cut = l1node.textstart - l1_margin[0];
-            self.outf.writeStreamingAll(self.io, self.textin[lastpos..pre_cut]) catch |err|
-                return self.error_handle(l1node, err);
+            const pre_cut = l1node.span.?.start - l1_margin[0];
+            self.outf.writeStreamingAll(
+                self.io,
+                self.textin[lastpos..pre_cut],
+            ) catch |err| return self.error_handle(l1node, err);
 
-            const l1rule = rules_html.rule_by_kind(l1node.kind) catch |err|
-                return self.error_handle(l1node, err);
+            var l1rule: ?Rule.Gen = null;
+            for (html_rules.def) |r| {
+                if (r.kind == l1node.kind) {
+                    l1rule = r;
+                    break;
+                }
+            }
+            if (l1rule == null) return self.error_handle(l1node, Error.NoL1RuleForKind);
 
-            switch (l1rule.effect) {
-                .prepost => |pair| {
-                    self.outf.writeStreamingAll(self.io, pair.pre) catch |err|
-                        return self.error_handle(l1node, err);
-                    self.outf.writeStreamingAll(self.io, self.textin[l1node.textstart..l1node.textend]) catch |err|
-                        return self.error_handle(l1node, err);
-                    self.outf.writeStreamingAll(self.io, pair.post) catch |err|
+            switch (l1rule.?.algo) {
+                .text => |text| {
+                    self.outf.writeStreamingAll(self.io, text) catch |err|
                         return self.error_handle(l1node, err);
                 },
+                .prepost => |pair| {
+                    self.outf.writeStreamingAll(
+                        self.io,
+                        pair.pre,
+                    ) catch |err| return self.error_handle(l1node, err);
+                    self.outf.writeStreamingAll(
+                        self.io,
+                        self.textin[l1node.span.?.start..l1node.span.?.end],
+                    ) catch |err| return self.error_handle(l1node, err);
+                    self.outf.writeStreamingAll(
+                        self.io,
+                        pair.post,
+                    ) catch |err| return self.error_handle(l1node, err);
+                },
                 .replace => |f| {
-                    const replacement = f(self) catch |err|
-                        return self.error_handle(l1node, err);
-                    self.outf.writeStreamingAll(self.io, replacement) catch |err|
-                        return self.error_handle(l1node, err);
+                    self.outf.writeStreamingAll(
+                        self.io,
+                        f(self) catch |err| return self.error_handle(
+                            l1node,
+                            err,
+                        ),
+                    ) catch |err| return self.error_handle(l1node, err);
                 },
             }
 
-            lastpos = l1node.textend + l1_margin[1];
+            lastpos = l1node.span.?.end + l1_margin[1];
         }
 
-        self.outf.writeStreamingAll(self.io, self.textin[lastpos..l0node.textend]) catch |err|
+        self.outf.writeStreamingAll(self.io, self.textin[lastpos..l0node.span.?.end]) catch |err|
             return self.error_handle(l0node, err);
 
-        self.outf.writeStreamingAll(self.io, l0textpair.post) catch |err|
+        const l0posttext = switch (l0rule.?.algo) {
+            .prepost => |pair| pair.post,
+            .text => "", // no post text for single text l0 rule
+            else => return self.error_handle(l0node, Error.UnsupportedL0RuleAlgo),
+        };
+        self.outf.writeStreamingAll(self.io, l0posttext) catch |err|
             return self.error_handle(l0node, err);
     }
 }
