@@ -196,9 +196,12 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
 
                 defer self.l1nodeshead += 1;
                 self.l1nodes[self.l1nodeshead] = l1node;
-                l0node.l1childc += 1;
+
                 if (l0node.l1child0 == null) {
                     l0node.l1child0 = self.l1nodeshead;
+                    l0node.l1childhead = l0node.l1child0.? + 1;
+                } else {
+                    l0node.l1childhead = l0node.l1childhead.? + 1;
                 }
             }
         }

@@ -120,9 +120,9 @@ pub fn print_out(self: *@This()) void {
         // not having l1 nodes here means, that l1 nodes were possible but none
         // were encountered; defered print the rest of the l0 node's text, the
         // post text and continue to the next l0
-        if (l0node.l1childc == 0 or l0node.l1child0 == null) continue;
+        if (l0node.l1childhead == null or l0node.l1child0 == null) continue;
 
-        for (self.l1nodes[l0node.l1child0.? .. l0node.l1child0.? + l0node.l1childc]) |l1node| {
+        for (self.l1nodes[l0node.l1child0.?..l0node.l1childhead.?]) |l1node| {
             self.print_span(toprint0, l1node.span[0] - l1node.margin[0]);
 
             var l1rule: ?Rule.Gen = null;

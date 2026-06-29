@@ -5,7 +5,7 @@ pub const L0 = struct {
     span: ?@Vector(2, usize) = null,
 
     l1child0: ?usize = null,
-    l1childc: usize = 0, // TODO should be childhead
+    l1childhead: ?usize = null,
 
     contains_l1: bool = true,
 };
