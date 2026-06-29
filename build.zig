@@ -20,4 +20,13 @@ pub fn build(b: *std.Build) void {
     const run_exe = b.addRunArtifact(exe);
     const run_step = b.step("run", "Run the application");
     run_step.dependOn(&run_exe.step);
+
+    { // https://zigtools.org/zls/guides/build-on-save/
+        const exe_check = b.addExecutable(.{
+            .name = "ct2html",
+            .root_module = exe.root_module,
+        });
+        const check = b.step("check", "Check if ct2html compiles");
+        check.dependOn(&exe_check.step);
+    }
 }

@@ -190,7 +190,7 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
     while (self.bounded_pop(node_end)) |c| {
         inline for (l1_rules.def) |rule| {
             if (rule.in_triggers(c)) {
-                const l1node = rule.parse_node(self, l0node.*) catch |err| {
+                const l1node = rule.parse_node(self, node_end) catch |err| {
                     return self.error_handle(err);
                 };
 

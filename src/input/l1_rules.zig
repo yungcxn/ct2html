@@ -13,7 +13,15 @@ pub const CommandSyntaxError = error{
     WhiteSpaceInCommandNameNotAllowed,
 };
 
-pub const SyntaxError = error{LevelsAndCaptureLenMismatch} || CommandSyntaxError;
+pub const CaptureSyntaxError = error{
+    PreCaptureNoEnd,
+    PostCaptureNotFound,
+    PostCaptureNoEnd,
+    CaptureMismatch,
+    LevelForCaptureNotFound,
+};
+
+pub const SyntaxError = CaptureSyntaxError || CommandSyntaxError;
 
 pub const def = [_]Rule.L1{
     l1capture_rule('`', .inline_code),
@@ -38,15 +46,10 @@ fn l1capture_rule(
     return Rule.L1{
         .triggers = &.{trigger},
         .parse_node = struct {
-            pub fn capture(
-                p: *Parser,
-                l0node: Node.L0,
-            ) SyntaxError!Node.L1 {
-                p.cursor = l0node.span.?[0];
-                const endat = l0node.span.?[1];
-
+            pub fn capture(p: *Parser, endat: usize) SyntaxError!Node.L1 {
+                p.dec(); // to get cursor back to the first char on trigger
                 const capturec = p.bounded_skipc(trigger, endat) catch {
-                    return SyntaxError.LevelsAndCaptureLenMismatch;
+                    return CaptureSyntaxError.PreCaptureNoEnd;
                 };
                 const text_start = p.cursor;
 
@@ -56,20 +59,20 @@ fn l1capture_rule(
                         level = lk;
                     }
                 }
-                if (level == null) return SyntaxError.LevelsAndCaptureLenMismatch;
+                if (level == null) return CaptureSyntaxError.LevelForCaptureNotFound;
 
                 // cursor is at first letter after capture, much like in `capture_for`
                 const chars_in_capture = p.bounded_findc(trigger, endat) catch {
-                    return SyntaxError.LevelsAndCaptureLenMismatch;
+                    return CaptureSyntaxError.PostCaptureNotFound;
                 };
 
                 // cursor is on the first of the capture, repeat
                 const capturec2 = p.bounded_skipc(trigger, endat) catch {
-                    return SyntaxError.LevelsAndCaptureLenMismatch;
+                    return CaptureSyntaxError.PostCaptureNoEnd;
                 };
 
                 // e.g. ***txt-in-capture*** => capturec = 3, capturec2 = 3, must be same
-                if (capturec2 != capturec) return SyntaxError.LevelsAndCaptureLenMismatch;
+                if (capturec2 != capturec) return CaptureSyntaxError.CaptureMismatch;
 
                 return Node.L1{
                     .kind = level.?,
@@ -84,11 +87,8 @@ fn l1capture_rule(
     };
 }
 
-fn command(p: *Parser, l0node: Node.L0) SyntaxError!Node.L1 {
-    p.cursor = l0node.span.?[0];
-    const endat = l0node.span.?[1];
-
-    // we only accept commands of type @key(arg), while having cursor on @
+fn command(p: *Parser, endat: usize) SyntaxError!Node.L1 {
+    // we only accept commands of type @key(arg), while having cursor on @+1
     const name_start = p.cursor;
 
     const namec = p.bounded_findc('(', endat) catch {

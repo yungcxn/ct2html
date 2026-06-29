@@ -35,7 +35,7 @@ pub const L0 = struct {
 pub const L1 = struct {
     triggers: []const u8,
     // only parses a single node, which is returned
-    parse_node: *const fn (*Parser, Node.L0) L1SyntaxError!Node.L1,
+    parse_node: *const fn (*Parser, usize) L1SyntaxError!Node.L1,
 
     pub fn in_triggers(self: @This(), c: u8) bool {
         for (self.triggers) |trigger| {
