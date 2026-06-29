@@ -8,7 +8,8 @@ const GeneratorError = Generator.Error;
 
 pub const L0 = struct {
     triggers: ?[]const u8 = null, // null: e.g. paragraph
-    apply: *const fn (*Parser, usize) L0SyntaxError!ApplyFinalState,
+    // may parse multiple nodes, due to structuring l0 blocks
+    parse: *const fn (*Parser, usize) L0SyntaxError!ApplyFinalState,
     l0_begin: ?Node.Kind = null,
     l0_end: ?Node.Kind = null,
     l1_rescan: bool = true, // could l1 rules be applied in this block?
@@ -30,7 +31,9 @@ pub const L0 = struct {
 // in-block rules, really simple, e.g. bold text
 pub const L1 = struct {
     triggers: []const u8,
-    apply: *const fn (*Parser, usize) L1SyntaxError!void,
+    // only parses a single node, which is returned
+    // TODO: should be node...
+    parse_node: *const fn (*Parser, usize) L1SyntaxError!Node,
 
     pub fn in_triggers(self: @This(), c: u8) bool {
         for (self.triggers) |trigger| {

@@ -26,7 +26,7 @@ pub const def = [_]Rule.L1{
         .strikethrough_bold_italic,
     }),
 
-    .{ .triggers = &.{'@'}, .apply = &command },
+    .{ .triggers = &.{'@'}, .parse_node = &command },
 };
 
 // this is a common parser rule where we capture a substring withing a trigger
@@ -38,11 +38,11 @@ fn l1capture_rule(
 ) Rule.L1 {
     return Rule.L1{
         .triggers = &.{trigger},
-        .apply = struct {
+        .parse_node = struct {
             pub fn capture(
                 p: *Parser,
                 endat: usize,
-            ) SyntaxError!void {
+            ) SyntaxError!Node {
                 // we assume cursor pos is on second capture letter, so we move back
                 // to cound the capture to get the level
                 p.dec();
@@ -77,10 +77,10 @@ fn l1capture_rule(
                 // e.g. ***txt-in-capture*** => capturec = 3, capturec2 = 3, must be same
                 if (capturec2 != capturec) return SyntaxError.LevelsAndCaptureLenMismatch;
 
-                p.push_node(
-                    level.?,
-                    .{ .start = text_start, .end = text_start + chars_in_capture },
-                );
+                return Node{
+                    .kind = level.?,
+                    .span = .{ .start = text_start, .end = text_start + chars_in_capture },
+                };
 
                 // we return on cursor being +1 of the second capture, which is correct,
                 // -> next pop gives the letter after the capture, as expected
@@ -89,7 +89,7 @@ fn l1capture_rule(
     };
 }
 
-fn command(p: *Parser, endat: usize) SyntaxError!void {
+fn command(p: *Parser, endat: usize) SyntaxError!Node {
     // we only accept commands of type @key(arg), while having cursor on @
     const name_start = p.cursor;
 
@@ -116,8 +116,11 @@ fn command(p: *Parser, endat: usize) SyntaxError!void {
 
     if (argcharc == 0) return CommandSyntaxError.MissingCommandArg;
 
-    p.push_node(cmd_kind, .{ .start = p.cursor - argcharc, .end = p.cursor });
+    // cursor is on ')', so for push we inc again after return
+    defer p.inc();
 
-    // cursor is on ')', so for push we inc again
-    p.inc();
+    return Node{
+        .kind = cmd_kind,
+        .span = .{ .start = p.cursor - argcharc, .end = p.cursor },
+    };
 }

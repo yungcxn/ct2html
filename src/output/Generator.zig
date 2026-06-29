@@ -5,11 +5,10 @@ const Rule = @import("../element/Rule.zig");
 
 pub const Error = error{
     OOM,
-    ExpectedL0NodeGotL1,
     L0NodeNotFound,
-    NoL0RuleForKind,
     NoL1RuleForKind,
     UnsupportedL0RuleAlgo,
+    UnnecessaryNodePresented,
 };
 
 // arena so we destroy all of the strings at once
@@ -19,18 +18,22 @@ io: std.Io, // for logging and writing to file
 
 textin: []const u8, // borrowed from parser
 
-nodes: []Node,
-nodec: usize,
+l0nodes: []Node,
+l0nodec: usize,
 
-nodecursor: usize = 0,
+l1nodes: []Node,
+l1nodec: usize,
+
 outf: std.Io.File, // TODO staging mem buf
 
 pub fn init(
     arenabase: std.mem.Allocator,
     io: std.Io,
     textin: []const u8,
-    nodes: []Node,
-    nodec: usize,
+    l0nodes: []Node,
+    l0nodec: usize,
+    l1nodes: []Node,
+    l1nodec: usize,
     outf: std.Io.File,
 ) !@This() {
     var new_arena = std.heap.ArenaAllocator.init(arenabase);
@@ -39,8 +42,10 @@ pub fn init(
         .arenalloc = new_arena.allocator(),
         .io = io,
         .textin = textin,
-        .nodes = nodes,
-        .nodec = nodec,
+        .l0nodes = l0nodes,
+        .l0nodec = l0nodec,
+        .l1nodes = l1nodes,
+        .l1nodec = l1nodec,
         .outf = outf,
     };
 }
@@ -49,45 +54,29 @@ pub fn deinit(self: *@This()) void {
     self.arena.deinit();
 }
 
-pub fn peek_node(self: *@This()) ?Node {
-    if (self.nodecursor >= self.nodec) return null;
-    return self.nodes[self.nodecursor];
-}
-
-fn pop_node(self: *@This()) ?Node {
-    if (self.nodecursor >= self.nodec) return null;
-    defer self.nodecursor += 1;
-    return self.nodes[self.nodecursor];
-}
-
-fn push_chunk(self: *@This(), textin_start: usize, textin_end: usize) void {
-    push_chunk_new(self, self.textin[textin_start..textin_end]);
-}
-
-fn push_chunk_new(self: *@This(), newchunk: []const u8) void {
-    if (self.chunksout_head >= self.chunksout.len) {
-        const newlen = self.chunksout.len * 2;
-        const newchunksout = self.arenalloc.realloc(self.chunksout, newlen) catch {
-            std.log.err("OOM for Generator chunks.");
-            std.process.exit(1);
-        };
-        self.chunksout = newchunksout;
-    }
-    self.chunksout[self.chunksout_head] = newchunk;
-    self.chunksout_head += 1;
-}
-
-fn error_handle(self: *@This(), n: anytype, err: anyerror) noreturn {
+// better error handle
+fn error_handle(self: *@This(), err: anyerror) noreturn {
     _ = self;
-    std.log.err("Generating for node {s}: {s}", .{ @tagName(n.kind), @errorName(err) });
+    std.log.err("Generating for node {s}", .{@errorName(err)});
     return std.process.exit(1);
+}
+
+inline fn print(self: *@This(), text: []const u8) void {
+    self.outf.writeStreamingAll(
+        self.io,
+        text,
+    ) catch |err| return self.error_handle(err);
+}
+
+inline fn print_span(self: *@This(), textstart: usize, textend: usize) void {
+    self.print(self.textin[textstart..textend]);
 }
 
 // TODO beautify out by indenting
 // TODO io_uring?
 pub fn print_out(self: *@This()) void {
-    while (self.pop_node()) |l0node| {
-        if (!l0node.kind.is_l0()) continue;
+    for (self.l0nodes[0..self.l0nodec]) |l0node| {
+        if (!l0node.kind.is_l0()) unreachable; // TODO IMPOSSIBLE
 
         var l0rule: ?Rule.Gen = null;
         for (html_rules.def) |r| {
@@ -98,45 +87,47 @@ pub fn print_out(self: *@This()) void {
         }
 
         if (l0rule == null) {
-            return self.error_handle(l0node, Error.NoL0RuleForKind);
+            return self.error_handle(Error.UnnecessaryNodePresented);
         }
 
         const l0pretext = switch (l0rule.?.algo) {
             .prepost => |pair| pair.pre,
             .text => |text| text,
-            else => return self.error_handle(
-                l0node,
-                Error.UnsupportedL0RuleAlgo,
-            ),
+            else => unreachable, // TODO
         };
+        self.print(l0pretext);
 
-        self.outf.writeStreamingAll(
-            self.io,
-            l0pretext,
-        ) catch |err| return self.error_handle(l0node, err);
+        defer {
+            const l0posttext = switch (l0rule.?.algo) {
+                .prepost => |pair| pair.post,
+                .text => "", // no post text for single text l0 rule
+                else => unreachable, // TODO
+            };
+            self.print(l0posttext);
+        }
 
-        // if the l0 node does not contain text, e.g. a section begin node,
-        // that is just used for semantic segregation of text blocks, it is
-        // not able to contain l1 nodes, since it does not contain text
-        if (l0node.span == null) continue;
+        // not containing a span means, that there can not be any l1 nodes
+        // -> we continue and run the defered print of post text
+        const l0span = l0node.span orelse continue;
+        // this variable tracks the next unprinted, to-be-printed text idx
+        var toprint0 = l0span.start;
 
-        var lastpos = l0node.span.?.start;
+        defer {
+            // we assume here that this is the last print, which needs to be
+            // from the last l1 node's end -- up until the end of the l0 node
+            self.print_span(toprint0, l0span.end);
+        }
+        // not having l1 nodes here means, that l1 nodes were possible but none
+        // were encountered; defered print the rest of the l0 node's text, the
+        // post text and continue to the next l0
+        if (l0node.l1childc == 0 or l0node.l1child0 == null) continue;
 
-        l1loop: while (self.peek_node()) |l1node| : (self.nodecursor += 1) {
-            if (l1node.kind.is_l0()) break :l1loop;
+        for (self.l1nodes[l0node.l1child0.? .. l0node.l1child0.? + l0node.l1childc]) |l1node| {
+            if (!l1node.kind.is_l1()) unreachable; // TODO IMPOSSIBLE
+            const l1margin = l1node.kind.l1_margin();
+            const l1span = l1node.span.?; // TODO never empty l1 node!!
 
-            const l1_margin = l1node.kind.l1_margin();
-            std.log.debug("l1_margin: {d}, {d}", .{ l1_margin[0], l1_margin[1] });
-
-            if (l1node.span.?.start < lastpos or l1node.span.?.end > l0node.span.?.end) {
-                continue :l1loop;
-            }
-
-            const pre_cut = l1node.span.?.start - l1_margin[0];
-            self.outf.writeStreamingAll(
-                self.io,
-                self.textin[lastpos..pre_cut],
-            ) catch |err| return self.error_handle(l1node, err);
+            self.print_span(toprint0, l1span.start - l1margin[0]);
 
             var l1rule: ?Rule.Gen = null;
             for (html_rules.def) |r| {
@@ -145,50 +136,23 @@ pub fn print_out(self: *@This()) void {
                     break;
                 }
             }
-            if (l1rule == null) return self.error_handle(l1node, Error.NoL1RuleForKind);
+            if (l1rule == null) return self.error_handle(Error.NoL1RuleForKind);
 
             switch (l1rule.?.algo) {
                 .text => |text| {
-                    self.outf.writeStreamingAll(self.io, text) catch |err|
-                        return self.error_handle(l1node, err);
+                    self.print(text);
                 },
                 .prepost => |pair| {
-                    self.outf.writeStreamingAll(
-                        self.io,
-                        pair.pre,
-                    ) catch |err| return self.error_handle(l1node, err);
-                    self.outf.writeStreamingAll(
-                        self.io,
-                        self.textin[l1node.span.?.start..l1node.span.?.end],
-                    ) catch |err| return self.error_handle(l1node, err);
-                    self.outf.writeStreamingAll(
-                        self.io,
-                        pair.post,
-                    ) catch |err| return self.error_handle(l1node, err);
+                    self.print(pair.pre);
+                    self.print_span(l1span.start, l1span.end);
+                    self.print(pair.post);
                 },
                 .replace => |f| {
-                    self.outf.writeStreamingAll(
-                        self.io,
-                        f(self) catch |err| return self.error_handle(
-                            l1node,
-                            err,
-                        ),
-                    ) catch |err| return self.error_handle(l1node, err);
+                    self.print(f(self) catch |err| return self.error_handle(err));
                 },
             }
 
-            lastpos = l1node.span.?.end + l1_margin[1];
+            toprint0 = l1span.end + l1margin[1];
         }
-
-        self.outf.writeStreamingAll(self.io, self.textin[lastpos..l0node.span.?.end]) catch |err|
-            return self.error_handle(l0node, err);
-
-        const l0posttext = switch (l0rule.?.algo) {
-            .prepost => |pair| pair.post,
-            .text => "", // no post text for single text l0 rule
-            else => return self.error_handle(l0node, Error.UnsupportedL0RuleAlgo),
-        };
-        self.outf.writeStreamingAll(self.io, l0posttext) catch |err|
-            return self.error_handle(l0node, err);
     }
 }

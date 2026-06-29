@@ -1,5 +1,6 @@
 const std = @import("std");
 
+// TODO split up kinds! and move margins into the l1 node def
 pub const Kind = enum(u32) {
 
     // *kinds* are differentiated in:
@@ -14,7 +15,7 @@ pub const Kind = enum(u32) {
     pub const min_l1_val: u32 = 1 << 30;
     pub const min_l1_cmd_val: u32 = 1 << 31;
     fn new_l1_level(level: u32) u32 {
-        return 0x00000100 * level;
+        return min_l1_val | (0x00000100 * level);
     }
 
     // --- l0 start ---
@@ -69,7 +70,7 @@ pub const Kind = enum(u32) {
     img,
 
     pub fn is_l0(self: @This()) bool {
-        return @intFromEnum(self) < min_l0_attr_val;
+        return @intFromEnum(self) < min_l1_val;
     }
 
     pub fn is_l1(self: @This()) bool {
@@ -106,6 +107,7 @@ kind: Kind,
 // these are all indices in the text buffer except for childc
 span: ?Span,
 
-// we do not need children, if textstart and textend are in another node's
-// text range, then it is a child of that node. this way we can avoid
-// dynamic allocations for children lists.
+l1child0: ?usize = null,
+l1childc: usize = 0,
+
+contains_l1: bool = true,

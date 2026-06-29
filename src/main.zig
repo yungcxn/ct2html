@@ -56,14 +56,16 @@ pub fn main(init: std.process.Init) void {
     defer parser.deinit();
 
     parser.build_nodes();
-    parser.debug_print();
+    // parser.debug_print();
 
     var generator = Generator.init(
         arena.allocator(),
         io,
         text,
-        parser.nodes,
-        parser.nodeshead,
+        parser.l0nodes,
+        parser.l0nodeshead,
+        parser.l1nodes,
+        parser.l1nodeshead,
         out_file,
     ) catch |err| crash(err);
     defer generator.deinit();
