@@ -15,7 +15,6 @@ pub const CommandSyntaxError = error{
 
 pub const SyntaxError = error{LevelsAndCaptureLenMismatch} || CommandSyntaxError;
 
-// .def TODO
 pub const def = [_]Rule.L1{
     l1capture_rule('`', .inline_code),
     l1capture_rule('*', .{ .bold, .italic, .bold_italic }),
@@ -41,28 +40,23 @@ fn l1capture_rule(
         .parse_node = struct {
             pub fn capture(
                 p: *Parser,
-                endat: usize,
-            ) SyntaxError!Node {
-                // we assume cursor pos is on second capture letter, so we move back
-                // to cound the capture to get the level
-                p.dec();
+                l0node: Node.L0,
+            ) SyntaxError!Node.L1 {
+                p.cursor = l0node.span.?[0];
+                const endat = l0node.span.?[1];
+
                 const capturec = p.bounded_skipc(trigger, endat) catch {
                     return SyntaxError.LevelsAndCaptureLenMismatch;
                 };
                 const text_start = p.cursor;
 
-                var level: ?Node.Kind = null;
-                {
-                    // TODO give l1 nodes a level number table field, rework `Node`
-                    // primitive, but needed in half-comptime half-runtime world
-
-                    inline for (force_tup(node_levels), 1..) |lk, idx| {
-                        if (capturec == idx) {
-                            level = lk;
-                        }
+                var level: ?Node.L1Kind = null;
+                inline for (force_tup(node_levels), 1..) |lk, idx| {
+                    if (capturec == idx) {
+                        level = lk;
                     }
-                    if (level == null) return SyntaxError.LevelsAndCaptureLenMismatch;
                 }
+                if (level == null) return SyntaxError.LevelsAndCaptureLenMismatch;
 
                 // cursor is at first letter after capture, much like in `capture_for`
                 const chars_in_capture = p.bounded_findc(trigger, endat) catch {
@@ -77,9 +71,10 @@ fn l1capture_rule(
                 // e.g. ***txt-in-capture*** => capturec = 3, capturec2 = 3, must be same
                 if (capturec2 != capturec) return SyntaxError.LevelsAndCaptureLenMismatch;
 
-                return Node{
+                return Node.L1{
                     .kind = level.?,
-                    .span = .{ .start = text_start, .end = text_start + chars_in_capture },
+                    .span = .{ text_start, text_start + chars_in_capture },
+                    .margin = .{ capturec, capturec2 }, // both same len
                 };
 
                 // we return on cursor being +1 of the second capture, which is correct,
@@ -89,7 +84,10 @@ fn l1capture_rule(
     };
 }
 
-fn command(p: *Parser, endat: usize) SyntaxError!Node {
+fn command(p: *Parser, l0node: Node.L0) SyntaxError!Node.L1 {
+    p.cursor = l0node.span.?[0];
+    const endat = l0node.span.?[1];
+
     // we only accept commands of type @key(arg), while having cursor on @
     const name_start = p.cursor;
 
@@ -104,10 +102,12 @@ fn command(p: *Parser, endat: usize) SyntaxError!Node {
         return CommandSyntaxError.WhiteSpaceInCommandNameNotAllowed;
     }
 
+    const cmd_name = p.text[name_start..p.cursor];
     const cmd_kind = std.meta.stringToEnum(
-        Node.Kind,
-        p.text[name_start..p.cursor],
+        Node.L1Kind,
+        cmd_name,
     ) orelse return CommandSyntaxError.UnknownCommandName;
+    if (!cmd_kind.is_command()) return CommandSyntaxError.UnknownCommandName;
 
     p.inc(); // cursor is now on first letter of arg
     const argcharc = p.bounded_findc(')', endat) catch {
@@ -119,8 +119,9 @@ fn command(p: *Parser, endat: usize) SyntaxError!Node {
     // cursor is on ')', so for push we inc again after return
     defer p.inc();
 
-    return Node{
+    return Node.L1{
         .kind = cmd_kind,
-        .span = .{ .start = p.cursor - argcharc, .end = p.cursor },
+        .span = .{ p.cursor - argcharc, p.cursor },
+        .margin = .{ "@".len + cmd_name.len + "(".len, ")".len },
     };
 }

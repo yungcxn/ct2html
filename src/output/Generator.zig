@@ -18,10 +18,10 @@ io: std.Io, // for logging and writing to file
 
 textin: []const u8, // borrowed from parser
 
-l0nodes: []Node,
+l0nodes: []Node.L0,
 l0nodec: usize,
 
-l1nodes: []Node,
+l1nodes: []Node.L1,
 l1nodec: usize,
 
 outf: std.Io.File, // TODO staging mem buf
@@ -30,9 +30,9 @@ pub fn init(
     arenabase: std.mem.Allocator,
     io: std.Io,
     textin: []const u8,
-    l0nodes: []Node,
+    l0nodes: []Node.L0,
     l0nodec: usize,
-    l1nodes: []Node,
+    l1nodes: []Node.L1,
     l1nodec: usize,
     outf: std.Io.File,
 ) !@This() {
@@ -76,11 +76,11 @@ inline fn print_span(self: *@This(), textstart: usize, textend: usize) void {
 // TODO io_uring?
 pub fn print_out(self: *@This()) void {
     for (self.l0nodes[0..self.l0nodec]) |l0node| {
-        if (!l0node.kind.is_l0()) unreachable; // TODO IMPOSSIBLE
-
         var l0rule: ?Rule.Gen = null;
         for (html_rules.def) |r| {
-            if (r.kind == l0node.kind) {
+            if (std.meta.activeTag(r.kind) != .l0) continue;
+
+            if (r.kind.l0 == l0node.kind) {
                 l0rule = r;
                 break;
             }
@@ -93,7 +93,7 @@ pub fn print_out(self: *@This()) void {
         const l0pretext = switch (l0rule.?.algo) {
             .prepost => |pair| pair.pre,
             .text => |text| text,
-            else => unreachable, // TODO
+            else => @panic("Replace-Rule not supported for L0"),
         };
         self.print(l0pretext);
 
@@ -101,21 +101,21 @@ pub fn print_out(self: *@This()) void {
             const l0posttext = switch (l0rule.?.algo) {
                 .prepost => |pair| pair.post,
                 .text => "", // no post text for single text l0 rule
-                else => unreachable, // TODO
+                else => @panic("Replace-Rule not supported for L0"),
             };
             self.print(l0posttext);
         }
 
         // not containing a span means, that there can not be any l1 nodes
         // -> we continue and run the defered print of post text
-        const l0span = l0node.span orelse continue;
+        const l0span: @Vector(2, usize) = l0node.span orelse continue;
         // this variable tracks the next unprinted, to-be-printed text idx
-        var toprint0 = l0span.start;
+        var toprint0 = l0span[0];
 
         defer {
             // we assume here that this is the last print, which needs to be
             // from the last l1 node's end -- up until the end of the l0 node
-            self.print_span(toprint0, l0span.end);
+            self.print_span(toprint0, l0span[1]);
         }
         // not having l1 nodes here means, that l1 nodes were possible but none
         // were encountered; defered print the rest of the l0 node's text, the
@@ -123,15 +123,13 @@ pub fn print_out(self: *@This()) void {
         if (l0node.l1childc == 0 or l0node.l1child0 == null) continue;
 
         for (self.l1nodes[l0node.l1child0.? .. l0node.l1child0.? + l0node.l1childc]) |l1node| {
-            if (!l1node.kind.is_l1()) unreachable; // TODO IMPOSSIBLE
-            const l1margin = l1node.kind.l1_margin();
-            const l1span = l1node.span.?; // TODO never empty l1 node!!
-
-            self.print_span(toprint0, l1span.start - l1margin[0]);
+            self.print_span(toprint0, l1node.span[0] - l1node.margin[0]);
 
             var l1rule: ?Rule.Gen = null;
             for (html_rules.def) |r| {
-                if (r.kind == l1node.kind) {
+                if (std.meta.activeTag(r.kind) != .l1) continue;
+
+                if (r.kind.l1 == l1node.kind) {
                     l1rule = r;
                     break;
                 }
@@ -144,7 +142,7 @@ pub fn print_out(self: *@This()) void {
                 },
                 .prepost => |pair| {
                     self.print(pair.pre);
-                    self.print_span(l1span.start, l1span.end);
+                    self.print_span(l1node.span[0], l1node.span[1]);
                     self.print(pair.post);
                 },
                 .replace => |f| {
@@ -152,7 +150,7 @@ pub fn print_out(self: *@This()) void {
                 },
             }
 
-            toprint0 = l1span.end + l1margin[1];
+            toprint0 = l1node.span[1] + l1node.margin[1];
         }
     }
 }

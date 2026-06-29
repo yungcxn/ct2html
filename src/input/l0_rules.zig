@@ -17,20 +17,20 @@ pub const def = [_]Rule.L0{
     .{
         .triggers = &.{'-'},
         .parse = &dash_items,
-        .l0_begin = .unordered_list_begin,
-        .l0_end = .unordered_list_end,
+        .pre_node = .unordered_list_begin,
+        .post_node = .unordered_list_end,
     },
     .{
         .triggers = &.{ '1', '2', '3', '4', '5', '6', '7', '8', '9' },
         .parse = &num_items,
-        .l0_begin = .ordered_list_begin,
-        .l0_end = .ordered_list_end,
+        .pre_node = .ordered_list_begin,
+        .post_node = .ordered_list_end,
     },
     .{
         .triggers = &.{'!'},
         .parse = &attributes,
-        .l0_begin = .attribute_begin,
-        .l0_end = .attribute_end,
+        .pre_node = .attribute_begin,
+        .post_node = .attribute_end,
         .l1_rescan = false,
     },
 };
@@ -88,10 +88,15 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
             return AttributeSyntaxError.SpaceBetweenKeyAndColonNotAllowed;
         }
 
+        const attr_name = p.text[key_start..p.cursor];
         const attr_kind = std.meta.stringToEnum(
-            Node.Kind,
-            p.text[key_start..p.cursor],
+            Node.L0Kind,
+            attr_name,
         ) orelse return AttributeSyntaxError.UnknownAttributeName;
+
+        if (!attr_kind.is_attribute()) {
+            return AttributeSyntaxError.UnknownAttributeName;
+        }
 
         // cursor is at ':'...
         p.inc();
@@ -107,7 +112,11 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
         p.bounded_find('\n', endat) catch |e| {
             if (e == ParsingError.OutOfBounds) {
                 // last line, so must accept it
-                p.push_l0node(attr_kind, .{ .start = value_start, .end = endat });
+                p.push_l0node(.{
+                    .kind = attr_kind,
+                    .span = .{ value_start, endat },
+                    .contains_l1 = false,
+                });
                 break :line;
             } else {
                 return AttributeSyntaxError.MissingValue;
@@ -115,7 +124,11 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
         };
 
         // cursor is on '\n'
-        p.push_l0node(attr_kind, .{ .start = value_start, .end = p.cursor });
+        p.push_l0node(.{
+            .kind = attr_kind,
+            .span = .{ value_start, p.cursor },
+            .contains_l1 = false,
+        });
     }
 
     // we check if we even produced anything
@@ -129,7 +142,7 @@ pub fn heading(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
     const hashtagc: usize = p.skipc('#') catch {
         return SyntaxError.NothingAfterHeadingHashtags;
     };
-    const kind: Node.Kind = switch (hashtagc) {
+    const kind: Node.L0Kind = switch (hashtagc) {
         1 => .heading1,
         2 => .heading2,
         3 => .heading3,
@@ -147,7 +160,7 @@ pub fn heading(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
     if (!p.bounds_freeof(p.cursor, endat, '\n')) {
         return SyntaxError.NewlineInHeading;
     }
-    p.push_l0node(kind, .{ .start = p.cursor, .end = endat });
+    p.push_l0node(.{ .kind = kind, .span = .{ p.cursor, endat } });
     return .success;
 }
 
@@ -162,7 +175,10 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
         while (p.pop()) |c| {
             if (!p.in_bound(endat)) {
                 // last node
-                p.push_l0node(.dash_item, .{ .start = item_textstart, .end = endat });
+                p.push_l0node(.{
+                    .kind = .dash_item,
+                    .span = .{ item_textstart, endat },
+                });
                 break :outer;
             }
 
@@ -176,7 +192,10 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
                 },
                 '-' => {
                     // the next line has a new item, so we end on cursor-1=\n
-                    p.push_l0node(.dash_item, .{ .start = item_textstart, .end = p.cursor - 1 });
+                    p.push_l0node(.{
+                        .kind = .dash_item,
+                        .span = .{ item_textstart, p.cursor - 1 },
+                    });
                     continue :outer;
                 },
                 else => {
@@ -207,13 +226,16 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
             }
 
             // we are still on the sep, e.g. '.'
-            const label_kind: Node.Kind = switch (p.peek().?) {
+            const label_kind: Node.L0Kind = switch (p.peek().?) {
                 '.' => .num_dot_item_label,
                 ')' => .num_paren_item_label,
                 else => unreachable, // since we went for `sep_set`
             };
 
-            p.push_l0node(label_kind, .{ .start = p.cursor - labelc, .end = p.cursor });
+            p.push_l0node(.{
+                .kind = label_kind,
+                .span = .{ p.cursor - labelc, p.cursor },
+            });
             p.inc();
         }
 
@@ -228,7 +250,10 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
             while (p.pop()) |c| {
                 if (!p.in_bound(endat)) {
                     // last node
-                    p.push_l0node(.num_dot_item_text, .{ .start = text_start, .end = endat });
+                    p.push_l0node(.{
+                        .kind = .num_dot_item_text,
+                        .span = .{ text_start, endat },
+                    });
                     break :outer;
                 }
 
@@ -242,10 +267,10 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
                     },
                     '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
                         // the next line has a new item, so we end on cursor-1=\n
-                        p.push_l0node(
-                            .num_dot_item_text,
-                            .{ .start = text_start, .end = p.cursor - 1 },
-                        );
+                        p.push_l0node(.{
+                            .kind = .num_dot_item_text,
+                            .span = .{ text_start, p.cursor - 1 },
+                        });
                         continue :outer;
                     },
                     else => {
@@ -263,6 +288,6 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
 
 // default rule
 pub fn par(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
-    p.push_l0node(.paragraph, .{ .start = p.cursor, .end = endat });
+    p.push_l0node(.{ .kind = .paragraph, .span = .{ p.cursor, endat } });
     return .success;
 }

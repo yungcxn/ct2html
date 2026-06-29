@@ -18,10 +18,10 @@ alloc: std.mem.Allocator,
 text: []const u8,
 cursor: usize, // TODO we should provide a second cursor that replaces endat..
 
-l0nodes: []Node,
+l0nodes: []Node.L0,
 l0nodeshead: usize,
 
-l1nodes: []Node,
+l1nodes: []Node.L1,
 l1nodeshead: usize,
 
 pub fn init(alloc: std.mem.Allocator, text: []const u8) !@This() {
@@ -29,9 +29,9 @@ pub fn init(alloc: std.mem.Allocator, text: []const u8) !@This() {
         .alloc = alloc,
         .text = text,
         .cursor = 0,
-        .l0nodes = try alloc.alloc(Node, 4096),
+        .l0nodes = try alloc.alloc(Node.L0, 4096),
         .l0nodeshead = 0,
-        .l1nodes = try alloc.alloc(Node, 4096),
+        .l1nodes = try alloc.alloc(Node.L1, 4096),
         .l1nodeshead = 0,
     };
 }
@@ -154,9 +154,9 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) void {
         if (rule.in_triggers(l0_capture_c)) l0_rule = rule;
     }
 
-    if (l0_rule.l0_begin) |kind| {
-        self.push_l0node(kind, null);
-    }
+    if (l0_rule.pre_node) |kind| self.push_l0node(
+        .{ .kind = kind, .span = null, .contains_l1 = false },
+    );
 
     const l0_apply_state = l0_rule.parse(self, blockend) catch |err| {
         return self.error_handle(err);
@@ -167,35 +167,38 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) void {
             // we pushed to head-1 the p node, and not yet l1 nodes
             // so if we had a l0_begin pushed node, we must replace it
             // by the p node and reset cursor by -1
-            if (l0_rule.l0_begin) |_| {
+            if (l0_rule.pre_node) |_| {
                 const last_pnode = self.l0nodes[self.l0nodeshead - 1];
                 self.l0nodes[self.l0nodeshead - 2] = last_pnode;
                 self.l0nodeshead -= 1;
             }
         },
-        .success => if (l0_rule.l0_end) |kind| {
-            self.push_l0node(kind, null);
+        .success => if (l0_rule.post_node) |kind| {
+            self.push_l0node(
+                .{ .kind = kind, .span = null, .contains_l1 = false },
+            );
         },
     }
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
 // but cursor must be preserved after each func since it may move if the rule needs the cursor to
-fn parse_l1_in_l0node(self: *@This(), node: *Node) void {
+fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
     // assume span exists
-    self.cursor = node.span.?.start;
-    while (self.bounded_pop(node.span.?.end)) |c| {
+    self.cursor = l0node.span.?[0];
+    const node_end = l0node.span.?[1];
+    while (self.bounded_pop(node_end)) |c| {
         inline for (l1_rules.def) |rule| {
             if (rule.in_triggers(c)) {
-                const l1node = rule.parse_node(self, node.span.?.end) catch |err| {
+                const l1node = rule.parse_node(self, l0node.*) catch |err| {
                     return self.error_handle(err);
                 };
 
                 defer self.l1nodeshead += 1;
                 self.l1nodes[self.l1nodeshead] = l1node;
-                node.l1childc += 1;
-                if (node.l1child0 == null) {
-                    node.l1child0 = self.l1nodeshead;
+                l0node.l1childc += 1;
+                if (l0node.l1child0 == null) {
+                    l0node.l1child0 = self.l1nodeshead;
                 }
             }
         }
@@ -203,15 +206,17 @@ fn parse_l1_in_l0node(self: *@This(), node: *Node) void {
 }
 
 pub fn build_nodes(self: *@This()) void {
-    self.push_l0node(.begin, null);
+    self.push_l0node(.{ .kind = .begin, .span = null, .contains_l1 = false });
 
+    // l0 phase
     while (self.align_for_block()) |blockend| {
         self.parse_l0nodes_from_block(blockend);
         self.cursor = blockend;
     }
 
-    self.push_l0node(.end, null);
+    self.push_l0node(.{ .kind = .end, .span = null, .contains_l1 = false });
 
+    // l1 phase, reiterate over created l0 nodes
     for (self.l0nodes[0..self.l0nodeshead]) |*l0node| {
         if (l0node.contains_l1 and l0node.span != null) {
             self.parse_l1_in_l0node(l0node);
@@ -223,7 +228,7 @@ pub fn debug_print(self: @This()) void {
     std.debug.print("Nodes (L0):\n", .{});
     for (self.l0nodes[0..self.l0nodeshead], 0..) |node, idx| {
         var text: []const u8 = "";
-        if (node.span) |s| text = self.text[s.start..s.end];
+        if (node.span) |s| text = self.text[s[0]..s[1]];
         std.debug.print(
             "{d}: {any}\n   [{s}]\n\n",
             .{ idx, node.kind, text },
@@ -233,7 +238,7 @@ pub fn debug_print(self: @This()) void {
     std.debug.print("Nodes (L1):\n", .{});
     for (self.l1nodes[0..self.l1nodeshead], 0..) |node, idx| {
         var text: []const u8 = "";
-        if (node.span) |s| text = self.text[s.start..s.end];
+        if (node.span) |s| text = self.text[s[0]..s[1]];
         std.debug.print(
             "{d}: {any}\n   [{s}]\n\n",
             .{ idx, node.kind, text },
@@ -241,8 +246,11 @@ pub fn debug_print(self: @This()) void {
     }
 }
 
-pub fn push_l0node(self: *@This(), kind: Node.Kind, span: ?Node.Span) void {
-    self.l0nodes[self.l0nodeshead] = Node{ .kind = kind, .span = span };
+pub fn push_l0node(
+    self: *@This(),
+    l0node: Node.L0,
+) void {
+    self.l0nodes[self.l0nodeshead] = l0node;
     self.l0nodeshead += 1;
 }
 
