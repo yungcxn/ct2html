@@ -7,12 +7,24 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  prepare:
     if: startsWith(github.event.head_commit.message, 'chore(release):')
+    runs-on: ubuntu-latest
+    outputs:
+      ts: ${{ steps.ts.outputs.value }}
+    steps:
+      - name: Set release timestamp
+        id: ts
+        run: echo "value=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
         optimize: [ReleaseSafe, ReleaseFast]
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v3
       - uses: mlugg/setup-zig@v2
@@ -22,5 +34,6 @@ jobs:
       - run: tar -czf ct2html-${{ matrix.optimize }}.tar.gz ct2html
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
+          tag_name: ${{ needs.prepare.outputs.ts }}
+          name: ${{ needs.prepare.outputs.ts }}
           files: ct2html-${{ matrix.optimize }}.tar.gz
