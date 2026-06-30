@@ -1,0 +1,26 @@
+name: Build and Release
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: startsWith(github.event.head_commit.message, 'chore(release):')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        optimize: [ReleaseSafe, ReleaseFast]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev.387+31f157d80
+      - run: zig build -Doptimize=${{ matrix.optimize }}
+      - run: tar -czf ct2html-${{ matrix.optimize }}.tar.gz ct2html
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          files: ct2html-${{ matrix.optimize }}.tar.gz
