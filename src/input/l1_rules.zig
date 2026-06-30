@@ -46,7 +46,7 @@ fn l1capture_rule(
     return Rule.L1{
         .triggers = &.{trigger},
         .parse_node = struct {
-            pub fn capture(p: *Parser, endat: usize) SyntaxError!Node.L1 {
+            pub fn capture(p: *Parser, endat: usize) SyntaxError!?Node.L1 {
                 p.dec(); // to get cursor back to the first char on trigger
                 const capturec = p.bounded_skipc(trigger, endat) catch {
                     return CaptureSyntaxError.PreCaptureNoEnd;
@@ -87,7 +87,7 @@ fn l1capture_rule(
     };
 }
 
-fn command(p: *Parser, endat: usize) SyntaxError!Node.L1 {
+fn command(p: *Parser, endat: usize) SyntaxError!?Node.L1 {
     // we only accept commands of type @key(arg), while having cursor on @+1
     const name_start = p.cursor;
 

@@ -8,9 +8,10 @@ pub var manualloc: std.mem.Allocator = undefined;
 pub var arena: std.heap.ArenaAllocator = undefined;
 pub var io: std.Io = undefined;
 
-fn crash(err: anyerror) noreturn {
+// TODO redo error and crash handling in a dedicated error handler.
+pub fn crash(err: anyerror) noreturn {
     std.log.err("{s}", .{@errorName(err)});
-    std.process.exit(1);
+    return std.process.exit(1);
 }
 
 const argdef = .{
@@ -25,6 +26,17 @@ const argdef = .{
         .short_altname = 'o',
         .default = "stdout",
         .desc = "Whether to write output to file",
+    },
+    argx.Arg(bool){
+        .fieldname = "debug",
+        .short_altname = 'd',
+        .default = false,
+        .desc = "Print debug information",
+    },
+    argx.Arg(bool){
+        .fieldname = "htmlerror",
+        .default = false,
+        .desc = "Print the error as HTML instead of plain text",
     },
 };
 
@@ -52,11 +64,17 @@ pub fn main(init: std.process.Init) void {
         in_file,
     ) catch |err| crash(err);
 
-    var parser = Parser.init(arena.allocator(), text) catch |err| crash(err);
+    var parser = Parser.init(
+        arena.allocator(),
+        io,
+        text,
+        out_file,
+        args.htmlerror,
+    ) catch |err| crash(err);
     defer parser.deinit();
 
     parser.build_nodes();
-    // parser.debug_print();
+    if (args.debug) parser.debug_print();
 
     var generator = Generator.init(
         arena.allocator(),
@@ -67,6 +85,7 @@ pub fn main(init: std.process.Init) void {
         parser.l1nodes,
         parser.l1nodeshead,
         out_file,
+        args.htmlerror,
     ) catch |err| crash(err);
     defer generator.deinit();
 

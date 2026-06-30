@@ -1,5 +1,6 @@
 !style:value
 !header:othervalue
+!raw:<!-- this is a comment -->
 
 Here is some *bold-containing* text, and some **italic-containing** txt.
 ***both***,
@@ -67,11 +68,9 @@ The end before the end.
 
 1. Again 
 
+Here I want @link(https://www.google.com) without a name,
+and @link(https://www.google.com, with a name)...
+
+Here is some @raw(<div>raw html</div>) and some @raw(<span>inline raw html</span>).
+
 The end!
-
-
-
-
-
-
-

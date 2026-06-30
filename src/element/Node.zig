@@ -30,6 +30,8 @@ pub const L0Kind = enum(u32) {
     heading4,
     heading5,
     heading6,
+
+    nonparagraph,
     paragraph,
 
     dash_item,
@@ -49,7 +51,9 @@ pub const L0Kind = enum(u32) {
 
     // attribute section
     style = 0xFF000000,
+    script,
     header,
+    raw,
 
     pub fn is_attribute(self: @This()) bool {
         return @intFromEnum(self) & 0xFF000000 == 0xFF000000;
@@ -69,9 +73,13 @@ pub const L1Kind = enum(u32) {
 
     strikethrough_bold_italic,
 
+    abbreviation, // TODO!
+
     // command section
     link = 0xFF000000,
+    script,
     img,
+    raw,
 
     pub fn is_command(self: @This()) bool {
         return @intFromEnum(self) & 0xFF000000 == 0xFF000000;

@@ -3,6 +3,8 @@ const Node = @import("../element/Node.zig");
 const html_rules = @import("html_rules.zig");
 const Rule = @import("../element/Rule.zig");
 
+// TODO: caching by saving outfile at /tmp/ct2html/datetimenanoseconds.html (faster than hash)
+
 pub const Error = error{
     OOM,
     L0NodeNotFound,
@@ -26,6 +28,8 @@ l1nodec: usize,
 
 outf: std.Io.File, // TODO staging mem buf
 
+htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
+
 pub fn init(
     arenabase: std.mem.Allocator,
     io: std.Io,
@@ -35,6 +39,7 @@ pub fn init(
     l1nodes: []Node.L1,
     l1nodec: usize,
     outf: std.Io.File,
+    htmlerror: bool,
 ) !@This() {
     var new_arena = std.heap.ArenaAllocator.init(arenabase);
     return .{
@@ -47,6 +52,7 @@ pub fn init(
         .l1nodes = l1nodes,
         .l1nodec = l1nodec,
         .outf = outf,
+        .htmlerror = htmlerror,
     };
 }
 
@@ -54,21 +60,34 @@ pub fn deinit(self: *@This()) void {
     self.arena.deinit();
 }
 
-// better error handle
 fn error_handle(self: *@This(), err: anyerror) noreturn {
-    _ = self;
-    std.log.err("Generating for node {s}", .{@errorName(err)});
-    return std.process.exit(1);
+    var text: []const u8 = undefined;
+    var buf: [1024]u8 = undefined;
+    if (self.htmlerror) {
+        text = std.fmt.bufPrint(
+            &buf,
+            "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Error</title></head><body><h1>Error</h1><p><code>{s}</code></p></body></html>",
+            .{@errorName(err)},
+        ) catch |e| return @import("../main.zig").crash(e);
+    } else {
+        text = std.fmt.bufPrint(
+            &buf,
+            "Generating for node {s}",
+            .{@errorName(err)},
+        ) catch |e| return @import("../main.zig").crash(e);
+    }
+    self.print(text);
+    return @import("../main.zig").crash(err);
 }
 
-inline fn print(self: *@This(), text: []const u8) void {
+pub inline fn print(self: *@This(), text: []const u8) void {
     self.outf.writeStreamingAll(
         self.io,
         text,
     ) catch |err| return self.error_handle(err);
 }
 
-inline fn print_span(self: *@This(), textstart: usize, textend: usize) void {
+pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void {
     self.print(self.textin[textstart..textend]);
 }
 
@@ -145,8 +164,8 @@ pub fn print_out(self: *@This()) void {
                     self.print_span(l1node.span[0], l1node.span[1]);
                     self.print(pair.post);
                 },
-                .replace => |f| {
-                    self.print(f(self) catch |err| return self.error_handle(err));
+                .print => |f| {
+                    f(self, l1node.span) catch |err| return self.error_handle(err);
                 },
             }
 

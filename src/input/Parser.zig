@@ -15,6 +15,7 @@ pub const ParsingError = error{
 };
 
 alloc: std.mem.Allocator,
+io: std.Io, // for error logging only
 text: []const u8,
 cursor: usize, // TODO we should provide a second cursor that replaces endat..
 
@@ -24,15 +25,27 @@ l0nodeshead: usize,
 l1nodes: []Node.L1,
 l1nodeshead: usize,
 
-pub fn init(alloc: std.mem.Allocator, text: []const u8) !@This() {
+error_outf: std.Io.File,
+htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
+
+pub fn init(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    text: []const u8,
+    error_outf: std.Io.File,
+    htmlerror: bool,
+) !@This() {
     return .{
         .alloc = alloc,
+        .io = io,
         .text = text,
         .cursor = 0,
         .l0nodes = try alloc.alloc(Node.L0, 4096),
         .l0nodeshead = 0,
         .l1nodes = try alloc.alloc(Node.L1, 4096),
         .l1nodeshead = 0,
+        .error_outf = error_outf,
+        .htmlerror = htmlerror,
     };
 }
 
@@ -41,24 +54,49 @@ pub fn deinit(self: @This()) void {
     self.alloc.free(self.l1nodes);
 }
 
-// TODO should do a single pass func erasing catch spamming
-pub fn error_handle(self: *@This(), err: anyerror) void {
-    const line, const col = self.get_line_col();
+pub fn printf_err(self: *@This(), comptime fmt: []const u8, args: anytype) void {
+    var buf: [1024]u8 = undefined;
+    const text = std.fmt.bufPrint(
+        &buf,
+        fmt,
+        args,
+    ) catch |err| return @import("../main.zig").crash(err);
 
-    std.log.err("in line {} (:{}) :: {s}", .{ line, col, @errorName(err) });
+    const lines = if (self.htmlerror) .{ "<p><code style=\"white-space: pre;\">", text, "</code></p>" } else .{ "", text, "" };
+    inline for (lines) |txt| {
+        self.error_outf.writeStreamingAll(
+            self.io,
+            txt,
+        ) catch |err| return @import("../main.zig").crash(err);
+    }
+}
+
+fn error_handle(self: *@This(), err: anyerror) noreturn {
+    if (self.htmlerror) {
+        self.printf_err("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Error</title></head><body><h1>Error</h1><p>", .{});
+    }
+    const line, const col = self.get_line_col();
+    const orig_cursor = self.cursor;
+    self.printf_err("in line {} (:{}) :: {s}\n", .{ line, col, @errorName(err) });
     const b = self.find_line_bounds();
-    self.cursor = b[0];
     const text = self.text[b[0]..b[1]];
-    std.log.err("[context]: {s}", .{text});
-    const pos = self.cursor - b[0];
+    self.printf_err("[context]: {s}\n", .{text});
+    const pos = orig_cursor - b[0];
+    self.cursor = b[0];
     const pos_marker = self.alloc.alloc(u8, pos + 1) catch {
-        std.log.err("Failed to alloc for pos_marker", .{});
-        std.process.exit(1);
+        self.printf_err("Failed to alloc for pos_marker", .{});
+        return std.process.exit(1);
     };
     defer self.alloc.free(pos_marker);
     for (pos_marker) |*c| c.* = ' ';
     pos_marker[pos] = '^';
-    std.log.err("           {s}", .{pos_marker});
+    self.printf_err("           {s}\n", .{pos_marker});
+
+    if (self.htmlerror) {
+        self.printf_err("</p></body></html>", .{});
+    }
+
+    return std.process.exit(1);
 }
 
 // returns pos of last newline1 and next newline-1
@@ -188,20 +226,23 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
     self.cursor = l0node.span.?[0];
     const node_end = l0node.span.?[1];
     while (self.bounded_pop(node_end)) |c| {
+        if (c == '\\') continue; // we ignore the next char, since it's escaped
         inline for (l1_rules.def) |rule| {
             if (rule.in_triggers(c)) {
                 const l1node = rule.parse_node(self, node_end) catch |err| {
                     return self.error_handle(err);
                 };
 
-                defer self.l1nodeshead += 1;
-                self.l1nodes[self.l1nodeshead] = l1node;
+                if (l1node) |node| {
+                    defer self.l1nodeshead += 1;
+                    self.l1nodes[self.l1nodeshead] = node;
 
-                if (l0node.l1child0 == null) {
-                    l0node.l1child0 = self.l1nodeshead;
-                    l0node.l1childhead = l0node.l1child0.? + 1;
-                } else {
-                    l0node.l1childhead = l0node.l1childhead.? + 1;
+                    if (l0node.l1child0 == null) {
+                        l0node.l1child0 = self.l1nodeshead;
+                        l0node.l1childhead = l0node.l1child0.? + 1;
+                    } else {
+                        l0node.l1childhead = l0node.l1childhead.? + 1;
+                    }
                 }
             }
         }
@@ -233,18 +274,17 @@ pub fn debug_print(self: @This()) void {
         var text: []const u8 = "";
         if (node.span) |s| text = self.text[s[0]..s[1]];
         std.debug.print(
-            "{d}: {any}\n   [{s}]\n\n",
-            .{ idx, node.kind, text },
+            "{d}: {any} (children:{any}..{any})), (contains l1?{any}))\n   [{s}]\n\n",
+            .{ idx, node.kind, node.l1child0, node.l1childhead, node.contains_l1, text },
         );
     }
 
     std.debug.print("Nodes (L1):\n", .{});
     for (self.l1nodes[0..self.l1nodeshead], 0..) |node, idx| {
-        var text: []const u8 = "";
-        if (node.span) |s| text = self.text[s[0]..s[1]];
+        const text: []const u8 = self.text[node.span[0]..node.span[1]];
         std.debug.print(
-            "{d}: {any}\n   [{s}]\n\n",
-            .{ idx, node.kind, text },
+            "{d}: {any} (margin:{any})\n   [{s}]\n\n",
+            .{ idx, node.kind, node.margin, text },
         );
     }
 }

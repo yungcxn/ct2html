@@ -11,7 +11,8 @@ const ParsingError = Parser.ParsingError;
 
 // .def TODO
 pub const def = [_]Rule.L0{
-    .{ .triggers = null, .parse = &par },
+    .{ .parse = &par },
+    .{ .triggers = &.{'?'}, .parse = &nonpar },
     .{ .triggers = &.{'\\'}, .parse = &par },
     .{ .triggers = &.{'#'}, .parse = &heading },
     .{
@@ -67,6 +68,7 @@ pub const SyntaxError = error{
     Unhandled,
 } || AttributeSyntaxError || OrderedItemsSyntaxError;
 
+// TODO only doing first
 pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
     // attribute block is only allowed if it is the first node in the document
     // since from it we generate structurally important html tags
@@ -129,6 +131,8 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
             .span = .{ value_start, p.cursor },
             .contains_l1 = false,
         });
+
+        p.inc(); // cursor is now on the first char of the next line, which could be '!' for next
     }
 
     // we check if we even produced anything
@@ -288,6 +292,12 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
 
 // default rule
 pub fn par(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
-    p.push_l0node(.{ .kind = .paragraph, .span = .{ p.cursor, endat } });
+    const offset: usize = if (p.peek() == '\\') 1 else 0; // this is the "force par" char
+    p.push_l0node(.{ .kind = .paragraph, .span = .{ p.cursor + offset, endat } });
+    return .success;
+}
+
+pub fn nonpar(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
+    p.push_l0node(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat } });
     return .success;
 }
