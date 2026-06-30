@@ -53,6 +53,7 @@ pub const L0Kind = enum(u32) {
     style = 0xFF000000,
     script,
     header,
+    abbreviation_def, // TODO!
     raw,
 
     pub fn is_attribute(self: @This()) bool {
@@ -79,6 +80,7 @@ pub const L1Kind = enum(u32) {
     link = 0xFF000000,
     script,
     img,
+    import, // TODO!
     raw,
 
     pub fn is_command(self: @This()) bool {

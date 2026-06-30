@@ -70,11 +70,6 @@ pub const SyntaxError = error{
 
 // TODO only doing first
 pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
-    // attribute block is only allowed if it is the first node in the document
-    // since from it we generate structurally important html tags
-    // attribute section has a meta node, and before it a root begin node
-    if (p.l0nodeshead != 2) return SyntaxError.AttributeBlockAtInvalidPosition;
-
     // we assume we are on '!'
     line: while (p.pop() == '!') {
         _ = p.bounded_skip_whitesp(endat) catch {
