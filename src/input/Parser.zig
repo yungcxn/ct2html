@@ -2,16 +2,16 @@ const std = @import("std");
 const Node = @import("../element/Node.zig");
 const Parser = @This();
 
+const ErrorReporter = @import("../ErrorReporter.zig");
+
 const l0_rules = @import("l0_rules.zig");
 const l1_rules = @import("l1_rules.zig");
-const AllSyntaxErrors = l0_rules.SyntaxError || l1_rules.SyntaxError;
 
 pub const ParsingError = error{
+    L0SyntaxError,
+    L1SyntaxError,
     EOF,
-    InvalidSyntax,
     OutOfBounds,
-    BoundNotFreeOf,
-    Unhandled,
 };
 
 alloc: std.mem.Allocator,
@@ -52,100 +52,6 @@ pub fn init(
 pub fn deinit(self: @This()) void {
     self.alloc.free(self.l0nodes);
     self.alloc.free(self.l1nodes);
-}
-
-pub fn printf_err(self: *@This(), comptime fmt: []const u8, args: anytype) void {
-    var buf: [1024]u8 = undefined;
-    const text = std.fmt.bufPrint(
-        &buf,
-        fmt,
-        args,
-    ) catch |err| return @import("../main.zig").crash(err);
-
-    const lines = if (self.htmlerror) .{ "<p><code style=\"white-space: pre;\">", text, "</code></p>" } else .{ "", text, "" };
-    inline for (lines) |txt| {
-        self.error_outf.writeStreamingAll(
-            self.io,
-            txt,
-        ) catch |err| return @import("../main.zig").crash(err);
-    }
-}
-
-fn error_handle(self: *@This(), err: anyerror) noreturn {
-    if (self.htmlerror) {
-        self.printf_err("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Error</title></head><body><h1>Error</h1><p>", .{});
-    }
-    const line, const col = self.get_line_col();
-    const orig_cursor = self.cursor;
-    self.printf_err("in line {} (:{}) :: {s}\n", .{ line, col, @errorName(err) });
-    const b = self.find_line_bounds();
-    const text = self.text[b[0]..b[1]];
-    self.printf_err("[context]: {s}\n", .{text});
-    const pos = orig_cursor - b[0];
-    self.cursor = b[0];
-    const pos_marker = self.alloc.alloc(u8, pos + 1) catch {
-        self.printf_err("Failed to alloc for pos_marker", .{});
-        return std.process.exit(1);
-    };
-    defer self.alloc.free(pos_marker);
-    for (pos_marker) |*c| c.* = ' ';
-    pos_marker[pos] = '^';
-    self.printf_err("           {s}\n", .{pos_marker});
-
-    if (self.htmlerror) {
-        self.printf_err("</p></body></html>", .{});
-    }
-
-    return std.process.exit(1);
-}
-
-// returns pos of last newline1 and next newline-1
-fn find_line_bounds(self: *@This()) struct { usize, usize } {
-    const cursor_save = self.cursor;
-    defer self.cursor = cursor_save;
-
-    // we expect to hit EOF, and since this is a generator function,
-    // we return null on end instead of propagating the error
-    var rbound_available = true;
-    self.skip_whitesp() catch {
-        rbound_available = false;
-    };
-
-    while (self.cursor > 0) {
-        self.dec();
-        if (self.peek().? == '\n') {
-            self.cursor += 1;
-            break;
-        }
-    }
-    const lbound = self.cursor;
-
-    var rbound: usize = undefined;
-    if (rbound_available) {
-        while (self.pop()) |c| {
-            if (c == '\n') {
-                rbound = self.cursor - 1;
-                return .{ lbound, rbound };
-            }
-        }
-    }
-
-    rbound = self.text.len;
-    return .{ lbound, rbound };
-}
-
-fn get_line_col(self: *@This()) struct { usize, usize } {
-    var line: usize = 1;
-    var col: usize = 1;
-    for (self.text[0..self.cursor]) |c| {
-        if (c == '\n') {
-            line += 1;
-            col = 1;
-        } else {
-            col += 1;
-        }
-    }
-    return .{ line, col };
 }
 
 // returns blockend, sends cursor to first block sign.
@@ -196,9 +102,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) void {
         .{ .kind = kind, .span = null, .contains_l1 = false },
     );
 
-    const l0_apply_state = l0_rule.parse(self, blockend) catch |err| {
-        return self.error_handle(err);
-    };
+    const l0_apply_state = l0_rule.parse(self, blockend) catch return ErrorReporter.throw();
 
     switch (l0_apply_state) {
         .transitioned => {
@@ -229,9 +133,7 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
         if (c == '\\') continue; // we ignore the next char, since it's escaped
         inline for (l1_rules.def) |rule| {
             if (rule.in_triggers(c)) {
-                const l1node = rule.parse_node(self, node_end) catch |err| {
-                    return self.error_handle(err);
-                };
+                const l1node = rule.parse_node(self, node_end) catch ErrorReporter.throw();
 
                 if (l1node) |node| {
                     defer self.l1nodeshead += 1;
@@ -351,6 +253,8 @@ pub inline fn skip(self: *@This(), val: anytype) ParsingError!void {
     return ParsingError.EOF;
 }
 pub inline fn bounded_skip(self: *@This(), val: anytype, endat: usize) ParsingError!void {
+    const cursor_safe = self.cursor;
+    errdefer self.cursor = cursor_safe; // restore cursor if we return an error for reporting
     try self.skip(val);
     if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
 }
@@ -362,6 +266,8 @@ pub inline fn find(self: *@This(), val: anytype) ParsingError!void {
     return ParsingError.EOF;
 }
 pub inline fn bounded_find(self: *@This(), val: anytype, endat: usize) ParsingError!void {
+    const cursor_safe = self.cursor;
+    errdefer self.cursor = cursor_safe;
     try self.find(val);
     if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
 }
@@ -374,6 +280,8 @@ pub inline fn skipc(self: *@This(), val: anytype) ParsingError!usize {
     return ParsingError.EOF;
 }
 pub inline fn bounded_skipc(self: *@This(), val: anytype, endat: usize) ParsingError!usize {
+    const cursor_safe = self.cursor;
+    errdefer self.cursor = cursor_safe;
     const count = try self.skipc(val);
     if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
     return count;
@@ -387,6 +295,8 @@ pub inline fn findc(self: *@This(), val: anytype) ParsingError!usize {
     return ParsingError.EOF;
 }
 pub inline fn bounded_findc(self: *@This(), val: anytype, endat: usize) ParsingError!usize {
+    const cursor_safe = self.cursor;
+    errdefer self.cursor = cursor_safe;
     const count = try self.findc(val);
     if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
     return count;
@@ -396,6 +306,8 @@ pub inline fn skip_whitesp(self: *@This()) ParsingError!void {
     try self.skip(.{ ' ', '\t', '\r', '\n' });
 }
 pub inline fn bounded_skip_whitesp(self: *@This(), endat: usize) ParsingError!void {
+    const cursor_safe = self.cursor;
+    errdefer self.cursor = cursor_safe;
     try self.skip_whitesp();
     if (!self.in_bound(endat)) return ParsingError.OutOfBounds;
 }

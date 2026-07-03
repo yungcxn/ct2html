@@ -3,10 +3,11 @@ const filex = @import("filex.zig");
 const argx = @import("argx.zig");
 const Parser = @import("input/Parser.zig");
 const Generator = @import("output/Generator.zig");
+const ErrorReporter = @import("ErrorReporter.zig");
 
-pub var manualloc: std.mem.Allocator = undefined;
-pub var arena: std.heap.ArenaAllocator = undefined;
-pub var io: std.Io = undefined;
+var manualloc: std.mem.Allocator = undefined;
+var arena: std.heap.ArenaAllocator = undefined;
+var io: std.Io = undefined;
 
 // TODO redo error and crash handling in a dedicated error handler.
 pub fn crash(err: anyerror) noreturn {
@@ -72,6 +73,8 @@ pub fn main(init: std.process.Init) void {
         args.htmlerror,
     ) catch |err| crash(err);
     defer parser.deinit();
+
+    ErrorReporter.init_singleton(io, &parser, out_file, args.htmlerror);
 
     parser.build_nodes();
     if (args.debug) parser.debug_print();

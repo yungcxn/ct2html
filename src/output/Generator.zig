@@ -2,8 +2,11 @@ const std = @import("std");
 const Node = @import("../element/Node.zig");
 const html_rules = @import("html_rules.zig");
 const Rule = @import("../element/Rule.zig");
+const ErrorReporter = @import("../ErrorReporter.zig");
 
 // TODO: caching by saving outfile at /tmp/ct2html/datetimenanoseconds.html (faster than hash)
+// TODO: not printing \ out, only if \\ the first vanishes. it should be replaced with some dead char
+// TODO: print special non ascii chars correctly...
 
 pub const Error = error{
     OOM,
@@ -60,31 +63,11 @@ pub fn deinit(self: *@This()) void {
     self.arena.deinit();
 }
 
-fn error_handle(self: *@This(), err: anyerror) noreturn {
-    var text: []const u8 = undefined;
-    var buf: [1024]u8 = undefined;
-    if (self.htmlerror) {
-        text = std.fmt.bufPrint(
-            &buf,
-            "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Error</title></head><body><h1>Error</h1><p><code>{s}</code></p></body></html>",
-            .{@errorName(err)},
-        ) catch |e| return @import("../main.zig").crash(e);
-    } else {
-        text = std.fmt.bufPrint(
-            &buf,
-            "Generating for node {s}",
-            .{@errorName(err)},
-        ) catch |e| return @import("../main.zig").crash(e);
-    }
-    self.print(text);
-    return @import("../main.zig").crash(err);
-}
-
 pub inline fn print(self: *@This(), text: []const u8) void {
     self.outf.writeStreamingAll(
         self.io,
         text,
-    ) catch |err| return self.error_handle(err);
+    ) catch |err| return ErrorReporter.crash(err);
 }
 
 pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void {
@@ -106,7 +89,7 @@ pub fn print_out(self: *@This()) void {
         }
 
         if (l0rule == null) {
-            return self.error_handle(Error.UnnecessaryNodePresented);
+            return ErrorReporter.crash(Error.UnnecessaryNodePresented);
         }
 
         const l0pretext = switch (l0rule.?.algo) {
@@ -153,7 +136,7 @@ pub fn print_out(self: *@This()) void {
                     break;
                 }
             }
-            if (l1rule == null) return self.error_handle(Error.NoL1RuleForKind);
+            if (l1rule == null) return ErrorReporter.crash(Error.NoL1RuleForKind);
 
             switch (l1rule.?.algo) {
                 .text => |text| {
@@ -165,7 +148,7 @@ pub fn print_out(self: *@This()) void {
                     self.print(pair.post);
                 },
                 .print => |f| {
-                    f(self, l1node.span) catch |err| return self.error_handle(err);
+                    f(self, l1node.span) catch |err| return ErrorReporter.crash(err);
                 },
             }
 

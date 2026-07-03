@@ -4,7 +4,9 @@ const std = @import("std");
 const Node = @import("../element/Node.zig");
 const Parser = @import("Parser.zig");
 const Rule = @import("../element/Rule.zig");
-const ParsingError = Parser.ParsingError;
+
+const L0SyntaxError = Parser.ParsingError.L0SyntaxError;
+const file_report = @import("../ErrorReporter.zig").file_report;
 
 // TODO better, real VTABLE type to write, define nice enum(int) vtable type
 // every func that is here registered may leave cursor anywhere
@@ -36,63 +38,35 @@ pub const def = [_]Rule.L0{
     },
 };
 
-const AttributeSyntaxError = error{
-    EmptyKey,
-    MissingColon,
-    SpaceBetweenKeyAndColonNotAllowed,
-    MissingValue,
-    EmptyAttributeSection,
-    UnknownAttributeName,
-    AttributeBlockAtInvalidPosition,
-};
-
-const OrderedItemsSyntaxError = error{
-    NotANumberPreSep,
-    NonDigitPreSep,
-    LabelRegionNeverEnded,
-    NothingAfterSep,
-    NumberRegionNeverEnded,
-    TextRegionEndedUnexpectedly,
-    NonDigitPreSepOnMultiline,
-    SpaceInLabelNotAllowed,
-    UnindentedLineAfterDashItem,
-};
-
-pub const SyntaxError = error{
-    EmptyItem,
-    NothingAfterHeadingHashtags,
-    NewlineInHeading,
-    UnsupportedHeadingLevel,
-    WrongAttributeFormat,
-    UnindentedLineAfterDashItem,
-    Unhandled,
-} || AttributeSyntaxError || OrderedItemsSyntaxError;
-
-// TODO only doing first
-pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
+pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
     // we assume we are on '!'
     line: while (p.pop() == '!') {
-        _ = p.bounded_skip_whitesp(endat) catch {
-            return AttributeSyntaxError.EmptyKey;
+        p.bounded_skip_whitesp(endat) catch {
+            file_report(error.L0Attribute, true, "Empty attribute key", null);
+            return L0SyntaxError;
         };
 
         const key_start = p.cursor;
 
-        p.bounded_find(':', endat) catch return AttributeSyntaxError.MissingColon;
+        p.bounded_find(':', endat) catch {
+            file_report(error.L0Attribute, true, "Missing colon in attribute", null);
+            return L0SyntaxError;
+        };
 
         // cursor is on ':', so we check if the keyname is free of whitespace
         if (!p.bounds_freeof_whitesp(key_start, p.cursor)) {
-            return AttributeSyntaxError.SpaceBetweenKeyAndColonNotAllowed;
+            file_report(error.L0Attribute, true, "Space between key and colon not allowed", null);
+            return L0SyntaxError;
         }
 
         const attr_name = p.text[key_start..p.cursor];
-        const attr_kind = std.meta.stringToEnum(
-            Node.L0Kind,
-            attr_name,
-        ) orelse return AttributeSyntaxError.UnknownAttributeName;
-
+        const attr_kind = std.meta.stringToEnum(Node.L0Kind, attr_name) orelse {
+            file_report(error.L0Attribute, true, "Unknown attribute name", null);
+            return L0SyntaxError;
+        };
         if (!attr_kind.is_attribute()) {
-            return AttributeSyntaxError.UnknownAttributeName;
+            file_report(error.L0Attribute, true, "Invalid attribute name", null);
+            return L0SyntaxError;
         }
 
         // cursor is at ':'...
@@ -100,14 +74,15 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
         // ...now at first char of value
 
         // advance till value start
-        _ = p.bounded_skip_whitesp(endat) catch {
-            return AttributeSyntaxError.MissingValue;
+        p.bounded_skip_whitesp(endat) catch {
+            file_report(error.L0Attribute, true, "Missing value in attribute", attr_kind);
+            return L0SyntaxError;
         };
 
         const value_start = p.cursor;
 
         p.bounded_find('\n', endat) catch |e| {
-            if (e == ParsingError.OutOfBounds) {
+            if (e == Parser.ParsingError.OutOfBounds) {
                 // last line, so must accept it
                 p.push_l0node(.{
                     .kind = attr_kind,
@@ -116,7 +91,8 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
                 });
                 break :line;
             } else {
-                return AttributeSyntaxError.MissingValue;
+                file_report(error.L0Attribute, true, "Missing value in attribute", attr_kind);
+                return L0SyntaxError;
             }
         };
 
@@ -131,16 +107,21 @@ pub fn attributes(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
     }
 
     // we check if we even produced anything
-    if (p.l0nodeshead == 2) return AttributeSyntaxError.EmptyAttributeSection;
+    if (p.l0nodeshead == 2) {
+        file_report(error.L0Attribute, true, "Empty attribute section", null);
+        return L0SyntaxError;
+    }
 
     return .success;
 }
 
 // read #'s
-pub fn heading(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
+pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
     const hashtagc: usize = p.skipc('#') catch {
-        return SyntaxError.NothingAfterHeadingHashtags;
+        file_report(error.L0Heading, true, "Nothing after heading hashtags", null);
+        return L0SyntaxError;
     };
+
     const kind: Node.L0Kind = switch (hashtagc) {
         1 => .heading1,
         2 => .heading2,
@@ -148,25 +129,40 @@ pub fn heading(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
         4 => .heading4,
         5 => .heading5,
         6 => .heading6,
-        else => return SyntaxError.UnsupportedHeadingLevel,
+        else => {
+            file_report(error.L0Heading, true, "Too many heading hashtags", null);
+            return L0SyntaxError;
+        },
     };
 
     p.bounded_skip_whitesp(endat) catch {
-        return SyntaxError.NothingAfterHeadingHashtags;
+        file_report(error.L0Heading, true, "Nothing after heading hashtags", null);
+        return L0SyntaxError;
     };
 
     // cursor is now at the first char of the heading text, and stays there
     if (!p.bounds_freeof(p.cursor, endat, '\n')) {
-        return SyntaxError.NewlineInHeading;
+        file_report(error.L0Heading, true, "Newline in heading", kind);
+        return L0SyntaxError;
     }
+
+    // cursor is now at the first char of the heading text, and stays there
+    if (!p.bounds_freeof(p.cursor, endat, '\n')) {
+        file_report(error.L0Heading, true, "Newline in heading", kind);
+        return L0SyntaxError;
+    }
+
     p.push_l0node(.{ .kind = kind, .span = .{ p.cursor, endat } });
     return .success;
 }
 
-pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
+pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
     outer: while (true) {
         p.inc(); // skip '-'
-        _ = p.bounded_skip_whitesp(endat) catch return SyntaxError.EmptyItem;
+        p.bounded_skip_whitesp(endat) catch {
+            file_report(error.L0DashItem, true, "Empty item", Node.L0Kind.dash_item);
+            return L0SyntaxError;
+        };
 
         // now we're at the item text begin
         const item_textstart = p.cursor;
@@ -183,7 +179,10 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
 
             if (c != '\n') continue;
 
-            switch (p.peek() orelse return SyntaxError.EmptyItem) {
+            switch (p.peek() orelse {
+                file_report(error.L0DashItem, true, "Empty item", Node.L0Kind.dash_item);
+                return L0SyntaxError;
+            }) {
                 ' ', '\t' => {
                     // through this condition, we allow the next line to be
                     // part of this item, if it starts anyhow indented
@@ -201,7 +200,8 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
                     // in this case we forbid something like this:
                     // \\\- this-is-some\n
                     // \\\unindented-text
-                    return SyntaxError.UnindentedLineAfterDashItem;
+                    file_report(error.L0DashItem, true, "Unindented line after dash item", Node.L0Kind.dash_item);
+                    return L0SyntaxError;
                 },
             }
         }
@@ -209,19 +209,21 @@ pub fn dash_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState 
     return .success;
 }
 
-pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
+pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
     const sep_set = .{ '.', ')' };
     outer: while (true) {
 
         // first: the label, we exit this block on cursor being sep +1
         {
             const labelc = p.bounded_findc(sep_set, endat) catch {
-                return OrderedItemsSyntaxError.NotANumberPreSep;
+                file_report(error.L0NumItem, true, "Not a number before separator", Node.L0Kind.num_dot_item_label);
+                return L0SyntaxError;
             };
             //cursor is on sep
 
             if (!p.bounds_freeof_whitesp(p.cursor - labelc, p.cursor)) {
-                return OrderedItemsSyntaxError.SpaceInLabelNotAllowed;
+                file_report(error.L0NumItem, true, "Space in label not allowed", Node.L0Kind.num_dot_item_label);
+                return L0SyntaxError;
             }
 
             // we are still on the sep, e.g. '.'
@@ -240,8 +242,9 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
 
         // second: the text, and we start with cursor on sep +1
         {
-            _ = p.bounded_skip_whitesp(endat) catch {
-                return OrderedItemsSyntaxError.NothingAfterSep;
+            p.bounded_skip_whitesp(endat) catch {
+                file_report(error.L0NumItem, true, "Nothing after separator", Node.L0Kind.num_dot_item_text);
+                return L0SyntaxError;
             };
 
             const text_start = p.cursor;
@@ -258,7 +261,10 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
 
                 if (c != '\n') continue;
 
-                switch (p.peek() orelse return OrderedItemsSyntaxError.NothingAfterSep) {
+                switch (p.peek() orelse {
+                    file_report(L0SyntaxError, true, "Nothing after separator", Node.L0Kind.num_dot_item_text);
+                    return L0SyntaxError;
+                }) {
                     ' ', '\t' => {
                         // through this condition, we allow the next line to be
                         // part of this item, if it starts anyhow indented
@@ -276,7 +282,8 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
                         // in this case we forbid something like this:
                         // \\\1. this-is-some\n
                         // \\\unindented-text
-                        return OrderedItemsSyntaxError.UnindentedLineAfterDashItem;
+                        file_report(L0SyntaxError, true, "Unindented line after number item", Node.L0Kind.num_dot_item_text);
+                        return L0SyntaxError;
                     },
                 }
             }
@@ -286,13 +293,13 @@ pub fn num_items(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
 }
 
 // default rule
-pub fn par(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
+pub fn par(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
     const offset: usize = if (p.peek() == '\\') 1 else 0; // this is the "force par" char
     p.push_l0node(.{ .kind = .paragraph, .span = .{ p.cursor + offset, endat } });
     return .success;
 }
 
-pub fn nonpar(p: *Parser, endat: usize) SyntaxError!Rule.L0.ApplyFinalState {
+pub fn nonpar(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
     p.push_l0node(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat } });
     return .success;
 }

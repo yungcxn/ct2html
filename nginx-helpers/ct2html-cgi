@@ -2,4 +2,4 @@
 echo "Content-Type: text/html"
 echo ""
 PATH=$(dirname "$(readlink -f "$0")")
-$PATH/../ct2html -i "$CT_FILE" --htmlerror
+$PATH/ct2html -i "$CT_FILE" --htmlerror

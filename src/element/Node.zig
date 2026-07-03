@@ -34,6 +34,14 @@ pub const L0Kind = enum(u32) {
     nonparagraph,
     paragraph,
 
+    footnote,
+    footnote_block,
+
+    code_block, // TODO, ``` with prism code class e.g. language-python in same name, otherwise err
+
+    quote_block, // TODO, > err otherwise
+    bold_quote_block, // TODO, >> err otherwise
+
     dash_item,
     dash_item_end,
 
@@ -74,12 +82,16 @@ pub const L1Kind = enum(u32) {
 
     strikethrough_bold_italic,
 
-    abbreviation, // TODO!
+    abbreviation, // TODO! with custom trigger letter
 
     // command section
     link = 0xFF000000,
     script,
-    img,
+    big, // TODO!
+    small, // TODO!
+    relsize, // TODO!
+    color, // TODO!
+    img, // TODO size
     import, // TODO!
     raw,
 

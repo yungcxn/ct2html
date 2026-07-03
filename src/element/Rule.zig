@@ -2,15 +2,12 @@ const std = @import("std");
 const Parser = @import("../input/Parser.zig");
 const Generator = @import("../output/Generator.zig");
 const Node = @import("Node.zig");
-const L0SyntaxError = @import("../input/l0_rules.zig").SyntaxError;
-const L1SyntaxError = @import("../input/l1_rules.zig").SyntaxError;
-const GeneratorError = Generator.Error;
 const hack = @import("../hack.zig");
 
 pub const L0 = struct {
     triggers: []const u8 = &.{}, // null: e.g. paragraph
     // may parse multiple nodes, due to structuring l0 blocks
-    parse: *const fn (*Parser, usize) L0SyntaxError!ApplyFinalState,
+    parse: *const fn (*Parser, usize) Parser.ParsingError!ApplyFinalState,
     pre_node: ?Node.L0Kind = null,
     post_node: ?Node.L0Kind = null,
     l1_rescan: bool = true, // could l1 rules be applied in this block?
@@ -36,7 +33,7 @@ pub const L0 = struct {
 pub const L1 = struct {
     triggers: []const u8,
     // only parses a single node, which is returned
-    parse_node: *const fn (*Parser, usize) L1SyntaxError!?Node.L1, // opt -> no node parsed
+    parse_node: *const fn (*Parser, usize) Parser.ParsingError!?Node.L1, // opt -> no node parsed
 
     pub fn in_triggers(self: @This(), c: u8) bool {
         for (self.triggers) |trigger| {
@@ -63,7 +60,7 @@ pub const Gen = struct {
         prepost: struct { pre: []const u8, post: []const u8 },
 
         // only for l1:
-        print: *const fn (g: *Generator, span: @Vector(2, usize)) GeneratorError!void,
+        print: *const fn (g: *Generator, span: @Vector(2, usize)) Generator.Error!void,
     },
 
     pub fn def(comptime kind: anytype, algoval: anytype) Gen {
