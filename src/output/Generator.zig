@@ -3,6 +3,7 @@ const Node = @import("../element/Node.zig");
 const html_rules = @import("html_rules.zig");
 const Rule = @import("../element/Rule.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
+const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 
 // TODO: caching by saving outfile at /tmp/ct2html/datetimenanoseconds.html (faster than hash)
 // TODO: not printing \ out, only if \\ the first vanishes. it should be replaced with some dead char
@@ -23,11 +24,8 @@ io: std.Io, // for logging and writing to file
 
 textin: []const u8, // borrowed from parser
 
-l0nodes: []Node.L0,
-l0nodec: usize,
-
-l1nodes: []Node.L1,
-l1nodec: usize,
+l0nodes: DynBuf(Node.L0),
+l1nodes: DynBuf(Node.L1),
 
 outf: std.Io.File, // TODO staging mem buf
 
@@ -37,10 +35,8 @@ pub fn init(
     arenabase: std.mem.Allocator,
     io: std.Io,
     textin: []const u8,
-    l0nodes: []Node.L0,
-    l0nodec: usize,
-    l1nodes: []Node.L1,
-    l1nodec: usize,
+    l0nodes: DynBuf(Node.L0),
+    l1nodes: DynBuf(Node.L1),
     outf: std.Io.File,
     htmlerror: bool,
 ) !@This() {
@@ -51,9 +47,7 @@ pub fn init(
         .io = io,
         .textin = textin,
         .l0nodes = l0nodes,
-        .l0nodec = l0nodec,
         .l1nodes = l1nodes,
-        .l1nodec = l1nodec,
         .outf = outf,
         .htmlerror = htmlerror,
     };
@@ -77,7 +71,7 @@ pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void 
 // TODO beautify out by indenting
 // TODO io_uring?
 pub fn print_out(self: *@This()) void {
-    for (self.l0nodes[0..self.l0nodec]) |l0node| {
+    for (self.l0nodes.to_slice()) |l0node| {
         var l0rule: ?Rule.Gen = null;
         for (html_rules.def) |r| {
             if (std.meta.activeTag(r.kind) != .l0) continue;
@@ -124,7 +118,7 @@ pub fn print_out(self: *@This()) void {
         // post text and continue to the next l0
         if (l0node.l1childhead == null or l0node.l1child0 == null) continue;
 
-        for (self.l1nodes[l0node.l1child0.?..l0node.l1childhead.?]) |l1node| {
+        for (self.l1nodes.to_slice()[l0node.l1child0.?..l0node.l1childhead.?]) |l1node| {
             self.print_span(toprint0, l1node.span[0] - l1node.margin[0]);
 
             var l1rule: ?Rule.Gen = null;

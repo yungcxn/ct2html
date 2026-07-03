@@ -1,6 +1,7 @@
 const std = @import("std");
 const filex = @import("filex.zig");
 const argx = @import("argx.zig");
+const Preprocessor = @import("input/Preprocessor.zig");
 const Parser = @import("input/Parser.zig");
 const Generator = @import("output/Generator.zig");
 const ErrorReporter = @import("ErrorReporter.zig");
@@ -53,7 +54,13 @@ pub fn main(init: std.process.Init) void {
     const out_file = filex.safeopen(io, args.out);
     defer filex.close(io, out_file);
 
-    const text: []u8 = filex.alloc_filetext(
+    // const text: []u8 = filex.alloc_filetext(
+    //     arena.allocator(),
+    //     io,
+    //     in_file,
+    // ) catch |err| ErrorReporter.crash(err);
+
+    const preprocessed_text: []const u8 = Preprocessor.walk_and_merge(
         arena.allocator(),
         io,
         in_file,
@@ -62,7 +69,7 @@ pub fn main(init: std.process.Init) void {
     var parser = Parser.init(
         arena.allocator(),
         io,
-        text,
+        preprocessed_text,
         out_file,
         args.htmlerror,
     ) catch |err| ErrorReporter.crash(err);
@@ -75,11 +82,9 @@ pub fn main(init: std.process.Init) void {
     var generator = Generator.init(
         arena.allocator(),
         io,
-        text,
+        preprocessed_text,
         parser.l0nodes,
-        parser.l0nodeshead,
         parser.l1nodes,
-        parser.l1nodeshead,
         out_file,
         args.htmlerror,
     ) catch |err| ErrorReporter.crash(err);

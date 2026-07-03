@@ -7,6 +7,7 @@ const Rule = @import("../element/Rule.zig");
 
 const L0SyntaxError = Parser.ParsingError.L0SyntaxError;
 const file_report = @import("../ErrorReporter.zig").file_report;
+const crash = @import("../ErrorReporter.zig").crash;
 
 // TODO better, real VTABLE type to write, define nice enum(int) vtable type
 // every func that is here registered may leave cursor anywhere
@@ -84,11 +85,11 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFin
         p.bounded_find('\n', endat) catch |e| {
             if (e == Parser.ParsingError.OutOfBounds) {
                 // last line, so must accept it
-                p.push_l0node(.{
+                p.l0nodes.push(.{
                     .kind = attr_kind,
                     .span = .{ value_start, endat },
                     .contains_l1 = false,
-                });
+                }) catch |err| crash(err);
                 break :line;
             } else {
                 file_report(error.L0Attribute, true, "Missing value in attribute", attr_kind);
@@ -97,17 +98,17 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFin
         };
 
         // cursor is on '\n'
-        p.push_l0node(.{
+        p.l0nodes.push(.{
             .kind = attr_kind,
             .span = .{ value_start, p.cursor },
             .contains_l1 = false,
-        });
+        }) catch |err| crash(err);
 
         p.inc(); // cursor is now on the first char of the next line, which could be '!' for next
     }
 
     // we check if we even produced anything
-    if (p.l0nodeshead == 2) {
+    if (p.l0nodes.head == 2) {
         file_report(error.L0Attribute, true, "Empty attribute section", null);
         return L0SyntaxError;
     }
@@ -152,7 +153,7 @@ pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalS
         return L0SyntaxError;
     }
 
-    p.push_l0node(.{ .kind = kind, .span = .{ p.cursor, endat } });
+    p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat } }) catch |err| crash(err);
     return .success;
 }
 
@@ -170,10 +171,11 @@ pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFin
         while (p.pop()) |c| {
             if (!p.in_bound(endat)) {
                 // last node
-                p.push_l0node(.{
+                p.l0nodes.push(.{
                     .kind = .dash_item,
                     .span = .{ item_textstart, endat },
-                });
+                }) catch |err| crash(err);
+
                 break :outer;
             }
 
@@ -190,10 +192,11 @@ pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFin
                 },
                 '-' => {
                     // the next line has a new item, so we end on cursor-1=\n
-                    p.push_l0node(.{
+                    p.l0nodes.push(.{
                         .kind = .dash_item,
                         .span = .{ item_textstart, p.cursor - 1 },
-                    });
+                    }) catch |err| crash(err);
+
                     continue :outer;
                 },
                 else => {
@@ -233,10 +236,11 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFina
                 else => unreachable, // since we went for `sep_set`
             };
 
-            p.push_l0node(.{
+            p.l0nodes.push(.{
                 .kind = label_kind,
                 .span = .{ p.cursor - labelc, p.cursor },
-            });
+            }) catch |err| crash(err);
+
             p.inc();
         }
 
@@ -252,10 +256,11 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFina
             while (p.pop()) |c| {
                 if (!p.in_bound(endat)) {
                     // last node
-                    p.push_l0node(.{
+                    p.l0nodes.push(.{
                         .kind = .num_dot_item_text,
                         .span = .{ text_start, endat },
-                    });
+                    }) catch |err| crash(err);
+
                     break :outer;
                 }
 
@@ -272,10 +277,11 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFina
                     },
                     '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
                         // the next line has a new item, so we end on cursor-1=\n
-                        p.push_l0node(.{
+                        p.l0nodes.push(.{
                             .kind = .num_dot_item_text,
                             .span = .{ text_start, p.cursor - 1 },
-                        });
+                        }) catch |err| crash(err);
+
                         continue :outer;
                     },
                     else => {
@@ -295,11 +301,13 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFina
 // default rule
 pub fn par(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
     const offset: usize = if (p.peek() == '\\') 1 else 0; // this is the "force par" char
-    p.push_l0node(.{ .kind = .paragraph, .span = .{ p.cursor + offset, endat } });
+    p.l0nodes.push(.{ .kind = .paragraph, .span = .{ p.cursor + offset, endat } }) catch |err| crash(err);
+
     return .success;
 }
 
 pub fn nonpar(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
-    p.push_l0node(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat } });
+    p.l0nodes.push(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat } }) catch |err| crash(err);
+
     return .success;
 }
