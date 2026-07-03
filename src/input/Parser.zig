@@ -14,7 +14,7 @@ pub const ParsingError = error{
     OutOfBounds,
 };
 
-alloc: std.mem.Allocator,
+arenalloc: std.mem.Allocator,
 io: std.Io, // for error logging only
 text: []const u8,
 cursor: usize, // TODO we should provide a second cursor that replaces endat..
@@ -29,29 +29,24 @@ error_outf: std.Io.File,
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 
 pub fn init(
-    alloc: std.mem.Allocator,
+    arenalloc: std.mem.Allocator,
     io: std.Io,
     text: []const u8,
     error_outf: std.Io.File,
     htmlerror: bool,
 ) !@This() {
     return .{
-        .alloc = alloc,
+        .arenalloc = arenalloc,
         .io = io,
         .text = text,
         .cursor = 0,
-        .l0nodes = try alloc.alloc(Node.L0, 4096),
+        .l0nodes = try arenalloc.alloc(Node.L0, 4096),
         .l0nodeshead = 0,
-        .l1nodes = try alloc.alloc(Node.L1, 4096),
+        .l1nodes = try arenalloc.alloc(Node.L1, 4096),
         .l1nodeshead = 0,
         .error_outf = error_outf,
         .htmlerror = htmlerror,
     };
-}
-
-pub fn deinit(self: @This()) void {
-    self.alloc.free(self.l0nodes);
-    self.alloc.free(self.l1nodes);
 }
 
 // returns blockend, sends cursor to first block sign.

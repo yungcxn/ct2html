@@ -9,12 +9,6 @@ var manualloc: std.mem.Allocator = undefined;
 var arena: std.heap.ArenaAllocator = undefined;
 var io: std.Io = undefined;
 
-// TODO redo error and crash handling in a dedicated error handler.
-pub fn crash(err: anyerror) noreturn {
-    std.log.err("{s}", .{@errorName(err)});
-    return std.process.exit(1);
-}
-
 const argdef = .{
     argx.Arg([]const u8){
         .fieldname = "in",
@@ -49,7 +43,7 @@ pub fn main(init: std.process.Init) void {
 
     const argslice = init.minimal.args.toSlice(
         arena.allocator(),
-    ) catch |err| crash(err);
+    ) catch |err| ErrorReporter.crash(err);
 
     const args = argx.parse(argdef, argslice);
 
@@ -63,7 +57,7 @@ pub fn main(init: std.process.Init) void {
         arena.allocator(),
         io,
         in_file,
-    ) catch |err| crash(err);
+    ) catch |err| ErrorReporter.crash(err);
 
     var parser = Parser.init(
         arena.allocator(),
@@ -71,8 +65,7 @@ pub fn main(init: std.process.Init) void {
         text,
         out_file,
         args.htmlerror,
-    ) catch |err| crash(err);
-    defer parser.deinit();
+    ) catch |err| ErrorReporter.crash(err);
 
     ErrorReporter.init_singleton(io, &parser, out_file, args.htmlerror);
 
@@ -89,7 +82,7 @@ pub fn main(init: std.process.Init) void {
         parser.l1nodeshead,
         out_file,
         args.htmlerror,
-    ) catch |err| crash(err);
+    ) catch |err| ErrorReporter.crash(err);
     defer generator.deinit();
 
     generator.print_out();
