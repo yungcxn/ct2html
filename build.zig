@@ -2,17 +2,16 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-
     const exe = b.addExecutable(.{
         .name = "ct2html",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
+            .target = b.standardTargetOptions(.{}),
+            .optimize = b.standardOptimizeOption(.{}),
         }),
     });
+
+    exe.use_llvm = true;
 
     const i = b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = .{ .custom = "../" } } });
     b.getInstallStep().dependOn(&i.step);

@@ -51,10 +51,11 @@ const Report = struct {
     }
 };
 
-pub fn crash(err: anyerror) noreturn {
+pub fn crash(err: anytype) noreturn {
     switch (@typeInfo(@TypeOf(err))) {
+        .@"struct" => std.log.err(err[0], err[1]),
         .error_set => std.log.err("Unhandled Crash: {s}", .{@errorName(err)}),
-        else => std.log.err("Unhandled Crash: {}", .{err}),
+        else => std.log.err("Unhandled Crash: {s}", .{err}),
     }
     return std.process.exit(1);
 }

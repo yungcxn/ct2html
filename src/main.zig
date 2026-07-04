@@ -49,7 +49,7 @@ pub fn main(init: std.process.Init) void {
     const args = argx.parse(argdef, argslice);
 
     const in_file = filex.safeopen(io, args.in);
-    defer filex.close(io, in_file);
+    // closed by preprocessor
 
     const out_file = filex.safeopen(io, args.out);
     defer filex.close(io, out_file);
@@ -60,11 +60,12 @@ pub fn main(init: std.process.Init) void {
     //     in_file,
     // ) catch |err| ErrorReporter.crash(err);
 
-    const preprocessed_text: []const u8 = Preprocessor.walk_and_merge(
+    const preprocessed_text: []const u8 = Preprocessor.preprocess(
         arena.allocator(),
         io,
         in_file,
     ) catch |err| ErrorReporter.crash(err);
+    if (args.debug) std.debug.print("Preprocessed text: {s}\n", .{preprocessed_text});
 
     var parser = Parser.init(
         arena.allocator(),

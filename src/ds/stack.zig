@@ -1,0 +1,65 @@
+const std = @import("std");
+
+pub fn Stack(T: type) type {
+    return struct {
+        alloc: std.mem.Allocator,
+        buf: []T,
+        sp: usize = std.math.maxInt(usize),
+        cap: usize,
+
+        pub fn init(alloc: std.mem.Allocator, start_cap: usize) !Stack(T) {
+            if (start_cap == 0) return error.Cap0NotAllowed;
+
+            return Stack(T){
+                .alloc = alloc,
+                .buf = try alloc.alloc(T, start_cap),
+                .cap = start_cap,
+            };
+        }
+
+        pub fn deinit(self: *Stack(T)) void {
+            self.alloc.free(self.buf);
+        }
+
+        fn grow(self: *Stack(T)) !void {
+            const new_cap = self.cap * 2;
+            self.buf = try self.alloc.realloc(self.buf, new_cap);
+            self.cap = new_cap;
+        }
+
+        pub fn empty(self: *Stack(T)) bool {
+            return self.sp == std.math.maxInt(usize);
+        }
+
+        pub fn push(self: *Stack(T), value: T) !void {
+            self.sp = self.sp +% 1;
+            if (self.sp >= self.cap) try self.grow();
+            self.buf[self.sp] = value;
+        }
+
+        pub fn pop(self: *Stack(T)) ?T {
+            if (self.empty()) return null;
+
+            defer self.sp = self.sp -% 1;
+            return self.peek();
+        }
+
+        pub fn peek(self: *Stack(T)) ?T {
+            if (self.empty()) return null;
+
+            return self.buf[self.sp];
+        }
+
+        pub fn peek_addr(self: *Stack(T)) ?*T {
+            if (self.empty()) return null;
+
+            return &self.buf[self.sp];
+        }
+
+        pub fn to_slice(self: *Stack(T)) ?[]T {
+            if (self.empty()) return null;
+
+            return self.buf[0 .. self.sp + 1];
+        }
+    };
+}
