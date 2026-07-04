@@ -37,7 +37,7 @@ pub fn alloc_stdin_bytes(
 
     while (true) {
         const n = try freader.interface.readSliceShort(&reader_buf);
-        try dynbuf.append(reader_buf[0..n]);
+        dynbuf.append(reader_buf[0..n]);
         if (n < reader_buf.len) break; // short read = EOF / CTRL-D
     }
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const crash = @import("../ErrorReporter.zig").crash;
 
 pub fn DynBuf(T: type) type {
     return struct {
@@ -21,24 +22,24 @@ pub fn DynBuf(T: type) type {
             self.alloc.free(self.buf);
         }
 
-        fn grow(self: *DynBuf(T)) !void {
+        fn grow(self: *DynBuf(T)) void {
             const new_cap = self.cap * 2;
-            self.buf = try self.alloc.realloc(self.buf, new_cap);
+            self.buf = self.alloc.realloc(self.buf, new_cap) catch return crash(error.OOM);
             self.cap = new_cap;
         }
 
-        pub fn push(self: *DynBuf(T), value: T) !void {
+        pub fn push(self: *DynBuf(T), value: T) void {
             if (self.head == self.cap) {
-                try self.grow();
+                self.grow();
             }
 
             self.buf[self.head] = value;
             self.head += 1;
         }
 
-        pub fn append(self: *DynBuf(T), slice: []const T) !void {
+        pub fn append(self: *DynBuf(T), slice: []const T) void {
             while (self.head + slice.len > self.cap) {
-                try self.grow();
+                self.grow();
             }
 
             @memcpy(self.buf[self.head .. self.head + slice.len], slice);

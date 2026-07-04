@@ -2,43 +2,8 @@ const std = @import("std");
 const filex = @import("../filex.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 const Stack = @import("../ds/stack.zig").Stack;
+const ByteStream = @import("../ds/ByteStream.zig");
 const crash = @import("../ErrorReporter.zig").crash;
-
-pub const CursoredBuf = struct {
-    buf: []const u8,
-    cursor: usize,
-
-    pub fn init(buf: []const u8) CursoredBuf {
-        return CursoredBuf{
-            .buf = buf,
-            .cursor = 0,
-        };
-    }
-
-    pub fn pop(self: *CursoredBuf) ?u8 {
-        if (self.cursor >= self.buf.len) return null;
-        defer self.cursor += 1;
-        return self.buf[self.cursor];
-    }
-
-    pub fn peek(self: *CursoredBuf) ?u8 {
-        if (self.cursor >= self.buf.len) return null;
-        return self.buf[self.cursor];
-    }
-
-    // on null, self.cursor is at end (exc) of buffer
-    pub fn take_exc(self: *CursoredBuf, delim: u8) ?[]const u8 {
-        const start = self.cursor;
-        while (self.cursor < self.buf.len) : (self.cursor += 1) {
-            if (self.buf[self.cursor] == delim) {
-                const result = self.buf[start..self.cursor];
-                self.cursor += 1; // skip delim
-                return result;
-            }
-        }
-        return null;
-    }
-};
 
 // @import("file") as long as there's no \ before @
 // if \, then command parsing skips it regardless, not adjustment needed
@@ -72,49 +37,49 @@ fn walk_and_merge(
     fbytes: []const u8,
 ) void {
     // null: file without reader, meaning `stdin`
-    var cbuf_stack = Stack(CursoredBuf).init(alloc, 4) catch return crash(error.OOM);
-    defer cbuf_stack.deinit();
-    cbuf_stack.push(.init(fbytes)) catch return crash(error.OOM);
+    var sbuf_stack = Stack(ByteStream).init(alloc, 4) catch |err| crash(err);
+    defer sbuf_stack.deinit();
+    sbuf_stack.push(.init(fbytes));
 
     // null: file without need to be cyclic checked or closed, meaning `stdin`
-    var file_stack = Stack(std.Io.File).init(alloc, 4) catch return crash(error.OOM);
+    var file_stack = Stack(std.Io.File).init(alloc, 4) catch |err| crash(err);
     defer file_stack.deinit();
-    file_stack.push(file0) catch return crash(error.OOM);
+    file_stack.push(file0);
 
-    while (cbuf_stack.peek_addr()) |cbuf| {
-        const start_cursor = cbuf.cursor;
-        const pre_at_span = cbuf.take_exc('@') orelse {
-            dynbuf.append(cbuf.buf[start_cursor..cbuf.cursor]) catch return crash(error.OOM);
-            alloc.free(cbuf.buf);
-            _ = cbuf_stack.pop();
+    while (sbuf_stack.peek_addr()) |sbuf| {
+        const start_cursor = sbuf.cursor;
+        const pre_at_span = sbuf.take_exc('@') orelse {
+            dynbuf.append(sbuf.buf[start_cursor..sbuf.cursor]);
+            alloc.free(sbuf.buf);
+            _ = sbuf_stack.pop();
             if (file_stack.pop()) |file| {
                 if (file.handle != std.Io.File.stdin().handle) file.close(io);
             }
             continue; // reading file is done; next
         };
 
-        const post_at_cursor = cbuf.cursor;
+        const post_at_cursor = sbuf.cursor;
         if (pre_at_span.len > 0 and pre_at_span[pre_at_span.len - 1] == '\\') {
-            dynbuf.append(pre_at_span) catch return crash(error.OOM);
-            dynbuf.push('@') catch return crash(error.OOM);
+            dynbuf.append(pre_at_span);
+            dynbuf.push('@');
             continue;
         }
 
         const is_import = blk: {
-            const cmd_span = cbuf.take_exc('(') orelse break :blk false;
+            const cmd_span = sbuf.take_exc('(') orelse break :blk false;
             break :blk std.mem.eql(u8, cmd_span, "import");
         };
 
         if (!is_import) { // same as above
             // undo the command lookahead so we don't lose data after '@'
-            cbuf.cursor = post_at_cursor;
-            dynbuf.append(pre_at_span) catch return crash(error.OOM);
-            dynbuf.push('@') catch return crash(error.OOM);
+            sbuf.cursor = post_at_cursor;
+            dynbuf.append(pre_at_span);
+            dynbuf.push('@');
             continue;
         }
 
-        const arg_span = cbuf.take_exc(')') orelse return crash("No closing '(' for @import-call");
-        dynbuf.append(pre_at_span) catch return crash(error.OOM);
+        const arg_span = sbuf.take_exc(')') orelse return crash("No closing '(' for @import-call");
+        dynbuf.append(pre_at_span);
 
         const newfile_path: []const u8 = arg_span;
         const newfile = std.Io.Dir.cwd().openFile(io, newfile_path, .{}) catch {
@@ -135,8 +100,8 @@ fn walk_and_merge(
         }
 
         // push newfile on stack and "schreite den berg hinauf :D"
-        const newfilebuf = filex.alloc_file_bytes(alloc, io, newfile) catch return crash(error.OOM);
-        cbuf_stack.push(.init(newfilebuf)) catch return crash(error.OOM);
-        file_stack.push(newfile) catch return crash(error.OOM);
+        const newfilebuf = filex.alloc_file_bytes(alloc, io, newfile) catch |err| crash(err);
+        sbuf_stack.push(.init(newfilebuf));
+        file_stack.push(newfile);
     }
 }

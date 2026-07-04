@@ -6,6 +6,8 @@ const Parser = @import("input/Parser.zig");
 const Generator = @import("output/Generator.zig");
 const ErrorReporter = @import("ErrorReporter.zig");
 
+// TODO !!! TESTS!!!
+
 var manualloc: std.mem.Allocator = undefined;
 var arena: std.heap.ArenaAllocator = undefined;
 var io: std.Io = undefined;

@@ -5,8 +5,8 @@ const Rule = @import("../element/Rule.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 
+// TODO \_ how to solve that issue?
 // TODO: caching by saving outfile at /tmp/ct2html/datetimenanoseconds.html (faster than hash)
-// TODO: not printing \ out, only if \\ the first vanishes. it should be replaced with some dead char
 // TODO: print special non ascii chars correctly...
 
 pub const Error = error{

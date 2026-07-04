@@ -91,7 +91,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) void {
 
     if (l0_rule.pre_node) |kind| self.l0nodes.push(
         .{ .kind = kind, .span = null, .contains_l1 = false },
-    ) catch |err| ErrorReporter.crash(err);
+    );
 
     const l0_apply_state = l0_rule.parse(self, blockend) catch return ErrorReporter.throw();
 
@@ -109,7 +109,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) void {
         .success => if (l0_rule.post_node) |kind| {
             self.l0nodes.push(
                 .{ .kind = kind, .span = null, .contains_l1 = false },
-            ) catch |err| ErrorReporter.crash(err);
+            );
         },
     }
 }
@@ -130,7 +130,7 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
                 const l1node = rule.parse_node(self, node_end) catch ErrorReporter.throw();
 
                 if (l1node) |node| {
-                    self.l1nodes.push(node) catch |err| ErrorReporter.crash(err);
+                    self.l1nodes.push(node);
 
                     if (l0node.l1child0 == null) {
                         l0node.l1child0 = self.l1nodes.head - 1;
@@ -145,9 +145,7 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
 }
 
 pub fn build_nodes(self: *@This()) void {
-    self.l0nodes.push(.{ .kind = .begin, .span = null, .contains_l1 = false }) catch |err| {
-        ErrorReporter.crash(err);
-    };
+    self.l0nodes.push(.{ .kind = .begin, .span = null, .contains_l1 = false });
 
     // l0 phase
     while (self.align_for_block()) |blockend| {
@@ -155,9 +153,7 @@ pub fn build_nodes(self: *@This()) void {
         self.cursor = blockend;
     }
 
-    self.l0nodes.push(.{ .kind = .end, .span = null, .contains_l1 = false }) catch |err| {
-        ErrorReporter.crash(err);
-    };
+    self.l0nodes.push(.{ .kind = .end, .span = null, .contains_l1 = false });
 
     // l1 phase, reiterate over created l0 nodes
     for (self.l0nodes.to_slice()) |*node| {

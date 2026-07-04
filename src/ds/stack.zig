@@ -1,4 +1,5 @@
 const std = @import("std");
+const crash = @import("../ErrorReporter.zig").crash;
 
 pub fn Stack(T: type) type {
     return struct {
@@ -21,9 +22,9 @@ pub fn Stack(T: type) type {
             self.alloc.free(self.buf);
         }
 
-        fn grow(self: *Stack(T)) !void {
+        fn grow(self: *Stack(T)) void {
             const new_cap = self.cap * 2;
-            self.buf = try self.alloc.realloc(self.buf, new_cap);
+            self.buf = self.alloc.realloc(self.buf, new_cap) catch return crash(error.OOM);
             self.cap = new_cap;
         }
 
@@ -31,9 +32,9 @@ pub fn Stack(T: type) type {
             return self.sp == std.math.maxInt(usize);
         }
 
-        pub fn push(self: *Stack(T), value: T) !void {
+        pub fn push(self: *Stack(T), value: T) void {
             self.sp = self.sp +% 1;
-            if (self.sp >= self.cap) try self.grow();
+            if (self.sp >= self.cap) self.grow();
             self.buf[self.sp] = value;
         }
 
