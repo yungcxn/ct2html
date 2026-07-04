@@ -3,6 +3,7 @@ const filex = @import("../filex.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 const Stack = @import("../ds/stack.zig").Stack;
 const ByteStream = @import("../ds/ByteStream.zig");
+const file_report = @import("../ErrorReporter.zig").file_report;
 const crash = @import("../ErrorReporter.zig").crash;
 
 // @import("file") as long as there's no \ before @
@@ -12,37 +13,47 @@ const crash = @import("../ErrorReporter.zig").crash;
 pub fn preprocess(
     arenalloc: std.mem.Allocator,
     io: std.Io,
+    cwd: std.Io.Dir,
     file0: std.Io.File,
-) ![]const u8 {
+) FileWalkError![]const u8 {
     var fbytes: []u8 = undefined;
-    if (file0.handle == std.Io.File.stdin().handle) {
-        fbytes = try filex.alloc_stdin_bytes(arenalloc, io, file0);
-    } else {
-        fbytes = try filex.alloc_file_bytes(arenalloc, io, file0);
-    }
-    var dynbuf = try DynBuf(u8).init(arenalloc, fbytes.len * 2);
-    walk_and_merge(arenalloc, io, &dynbuf, file0, fbytes);
     // `fbytes` is the `file0` buffer, which is freed in `walk_and_merge`
+    if (file0.handle == std.Io.File.stdin().handle) {
+        fbytes = filex.alloc_stdin_bytes(arenalloc, io, file0);
+    } else {
+        fbytes = filex.alloc_file_bytes(arenalloc, io, file0);
+    }
+    var dynbuf = DynBuf(u8).init(arenalloc, fbytes.len * 2);
+
+    try walk_and_merge(arenalloc, io, &dynbuf, cwd, file0, fbytes);
+
+    // only `try` since we try to propagate the test error when in testmode
 
     // we could postpone, but no need to keep all files twice in memory
     // since the reader ops copy the file contents in `dynbuf`
     return dynbuf.to_slice();
 }
 
+pub const FileWalkError = error{
+    NoImportArg,
+    ImportCycle,
+} || filex.FileError;
+
 fn walk_and_merge(
     alloc: std.mem.Allocator,
     io: std.Io,
     dynbuf: *DynBuf(u8),
+    cwd: std.Io.Dir,
     file0: std.Io.File,
     fbytes: []const u8,
-) void {
+) FileWalkError!void {
     // null: file without reader, meaning `stdin`
-    var sbuf_stack = Stack(ByteStream).init(alloc, 4) catch |err| crash(err);
+    var sbuf_stack = Stack(ByteStream).init(alloc, 4);
     defer sbuf_stack.deinit();
     sbuf_stack.push(.init(fbytes));
 
     // null: file without need to be cyclic checked or closed, meaning `stdin`
-    var file_stack = Stack(std.Io.File).init(alloc, 4) catch |err| crash(err);
+    var file_stack = Stack(std.Io.File).init(alloc, 4);
     defer file_stack.deinit();
     file_stack.push(file0);
 
@@ -53,7 +64,7 @@ fn walk_and_merge(
             alloc.free(sbuf.buf);
             _ = sbuf_stack.pop();
             if (file_stack.pop()) |file| {
-                if (file.handle != std.Io.File.stdin().handle) file.close(io);
+                filex.safeclose(io, file);
             }
             continue; // reading file is done; next
         };
@@ -78,13 +89,14 @@ fn walk_and_merge(
             continue;
         }
 
-        const arg_span = sbuf.take_exc(')') orelse return crash("No closing '(' for @import-call");
+        const arg_span = sbuf.take_exc(')') orelse {
+            return file_report(FileWalkError.NoImportArg, false, "No enclosing ')'", null);
+        };
+
         dynbuf.append(pre_at_span);
 
         const newfile_path: []const u8 = arg_span;
-        const newfile = std.Io.Dir.cwd().openFile(io, newfile_path, .{}) catch {
-            crash(.{ "Unable to open file: {s}", .{newfile_path} });
-        }; // closed later
+        const newfile = try filex.safeopen(io, cwd, newfile_path);
 
         // if newfile is in stack, we build a cycle, throw error
         // unwrapped since we currently peek into `file_stack` which guarantees atleast one elem
@@ -93,14 +105,18 @@ fn walk_and_merge(
                 const stat_a = newfile.stat(io) catch |e| return crash(e);
                 const stat_b = file.stat(io) catch |e| return crash(e);
                 if (stat_a.inode == stat_b.inode) {
-                    // cycle
-                    return crash(.{ "Cycle for file: {s}", .{newfile_path} });
+                    return file_report(
+                        FileWalkError.ImportCycle,
+                        false,
+                        .{ "Import cycle detected: {s}", .{newfile_path} },
+                        null,
+                    );
                 }
             }
         }
 
         // push newfile on stack and "schreite den berg hinauf :D"
-        const newfilebuf = filex.alloc_file_bytes(alloc, io, newfile) catch |err| crash(err);
+        const newfilebuf = filex.alloc_file_bytes(alloc, io, newfile);
         sbuf_stack.push(.init(newfilebuf));
         file_stack.push(newfile);
     }

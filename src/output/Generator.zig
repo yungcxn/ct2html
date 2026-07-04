@@ -39,7 +39,7 @@ pub fn init(
     l1nodes: DynBuf(Node.L1),
     outf: std.Io.File,
     htmlerror: bool,
-) !@This() {
+) @This() {
     var new_arena = std.heap.ArenaAllocator.init(arenabase);
     return .{
         .arena = new_arena,

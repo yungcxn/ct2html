@@ -5,24 +5,33 @@ const Generator = @import("Generator").Generator;
 
 var instance: ?@This() = null;
 
+arenalloc: std.mem.Allocator,
 io: std.Io,
 parser: ?*Parser = null,
-outf: std.Io.File,
+outf: std.Io.File = std.Io.File.stdout(),
 htmlmode: bool = false,
 prefiled_report: ?Report = null,
 
 pub fn init_singleton(
+    arenalloc: std.mem.Allocator,
     io: std.Io,
-    parser: *Parser,
-    outf: std.Io.File,
     htmlmode: bool,
 ) void {
     instance = @This(){
+        .arenalloc = arenalloc,
         .io = io,
-        .parser = parser,
-        .outf = outf,
         .htmlmode = htmlmode,
     };
+}
+
+pub fn set_out_file(outf: std.Io.File) void {
+    if (instance == null) crash(error.OutFileNotSet);
+    instance.?.outf = outf;
+}
+
+pub fn set_parser(parser: *Parser) void {
+    if (instance == null) crash(error.ParserNotSet);
+    instance.?.parser = parser;
 }
 
 const Report = struct {
@@ -51,26 +60,36 @@ const Report = struct {
     }
 };
 
+// while testing, this should NOT be executed! it is for non-user induced errors
 pub fn crash(err: anytype) noreturn {
+    std.log.err("-- UNHANDLED CRASH --", .{});
     switch (@typeInfo(@TypeOf(err))) {
         .@"struct" => std.log.err(err[0], err[1]),
-        .error_set => std.log.err("Unhandled Crash: {s}", .{@errorName(err)}),
-        else => std.log.err("Unhandled Crash: {s}", .{err}),
+        .error_set => std.log.err("{s}", .{@errorName(err)}),
+        else => std.log.err("{s}", .{err}),
     }
     return std.process.exit(1);
 }
 
+// this runs before any user induced error
 pub fn file_report(
-    err: anyerror,
+    err: anytype,
     from_text: bool,
-    texthint: ?[]const u8,
+    texthint: anytype,
     node_or_kind: anytype,
-) void {
+) @TypeOf(err) {
     const self = &instance.?;
     self.prefiled_report = Report{
         .err_name = @errorName(err),
         .from_text = from_text,
-        .texthint = texthint,
+        .texthint = switch (@typeInfo(@TypeOf(texthint))) {
+            .@"struct" => std.fmt.allocPrint(
+                self.arenalloc,
+                texthint[0],
+                texthint[1],
+            ) catch return crash(error.OOM),
+            else => texthint,
+        },
         .node_or_kind = switch (@typeInfo(@TypeOf(node_or_kind))) {
             .@"enum" => switch (@TypeOf(node_or_kind)) {
                 Node.L0Kind => .{ .l0kind = node_or_kind },
@@ -85,23 +104,20 @@ pub fn file_report(
             else => null,
         },
     };
+    return err;
 }
 
 pub fn throw() noreturn {
     const self = &instance.?;
     if (self.prefiled_report) |r| {
-        return self.filed_throw(r);
+        self.print_report(r);
+        return std.process.exit(1);
     } else {
-        return self.filed_throw(Report{
-            .err_name = "Unknown error",
-            .from_text = false,
-            .texthint = null,
-            .node_or_kind = null,
-        });
+        return crash(error.ThrowWithoutReport);
     }
 }
 
-fn filed_throw(self: *@This(), r: Report) noreturn {
+fn print_report(self: *@This(), r: Report) void {
     if (self.htmlmode) {
         self.outf.writeStreamingAll(self.io,
             \\\<!DOCTYPE html>\n
@@ -132,7 +148,7 @@ fn filed_throw(self: *@This(), r: Report) noreturn {
         }
     }
 
-    { // 2. if error resulted from text
+    if (r.from_text) { // 2. if error resulted from text
         const line, const col = self.parser_get_line_col();
         const orig_cursor = self.parser.?.cursor;
 
@@ -168,8 +184,6 @@ fn filed_throw(self: *@This(), r: Report) noreturn {
             \\\</html>\n
         ) catch |err| crash(err);
     }
-
-    return std.process.exit(1);
 }
 
 fn println(self: *@This(), text: []const u8) void {

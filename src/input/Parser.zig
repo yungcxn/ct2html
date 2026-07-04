@@ -32,14 +32,14 @@ pub fn init(
     text: []const u8,
     error_outf: std.Io.File,
     htmlerror: bool,
-) !@This() {
+) @This() {
     return .{
         .arenalloc = arenalloc,
         .io = io,
         .text = text,
         .cursor = 0,
-        .l0nodes = try .init(arenalloc, 4096),
-        .l1nodes = try .init(arenalloc, 4096),
+        .l0nodes = .init(arenalloc, 4096),
+        .l1nodes = .init(arenalloc, 4096),
         .error_outf = error_outf,
         .htmlerror = htmlerror,
     };
@@ -79,7 +79,7 @@ fn align_for_block(self: *@This()) ?usize {
 
 // assume that cursor is at the start of the block, and we do not need to set
 // cursor to some specific position afterwards
-fn parse_l0nodes_from_block(self: *@This(), blockend: usize) void {
+fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError!void {
     const l0_capture_c = self.peek().?;
 
     // cursor is at the first char of the block
@@ -93,7 +93,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) void {
         .{ .kind = kind, .span = null, .contains_l1 = false },
     );
 
-    const l0_apply_state = l0_rule.parse(self, blockend) catch return ErrorReporter.throw();
+    const l0_apply_state = try l0_rule.parse(self, blockend);
 
     switch (l0_apply_state) {
         .transitioned => {
@@ -116,7 +116,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) void {
 
 // assume cursor is at the start of the block, and blockend is the end of the block
 // but cursor must be preserved after each func since it may move if the rule needs the cursor to
-fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
+fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void {
     // assume span exists
     self.cursor = l0node.span.?[0];
     const node_end = l0node.span.?[1];
@@ -127,7 +127,7 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
         }
         inline for (l1_rules.def) |rule| {
             if (rule.in_triggers(c)) {
-                const l1node = rule.parse_node(self, node_end) catch ErrorReporter.throw();
+                const l1node = try rule.parse_node(self, node_end);
 
                 if (l1node) |node| {
                     self.l1nodes.push(node);
@@ -144,12 +144,12 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
     }
 }
 
-pub fn build_nodes(self: *@This()) void {
+pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
     self.l0nodes.push(.{ .kind = .begin, .span = null, .contains_l1 = false });
 
     // l0 phase
     while (self.align_for_block()) |blockend| {
-        self.parse_l0nodes_from_block(blockend);
+        try self.parse_l0nodes_from_block(blockend); // testmode err propagation
         self.cursor = blockend;
     }
 
@@ -158,7 +158,7 @@ pub fn build_nodes(self: *@This()) void {
     // l1 phase, reiterate over created l0 nodes
     for (self.l0nodes.to_slice()) |*node| {
         if (node.contains_l1 and node.span != null) {
-            self.parse_l1_in_l0node(node);
+            try self.parse_l1_in_l0node(node); // err progapation here aswell
         }
     }
 }

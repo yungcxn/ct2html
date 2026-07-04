@@ -8,12 +8,10 @@ pub fn Stack(T: type) type {
         sp: usize = std.math.maxInt(usize),
         cap: usize,
 
-        pub fn init(alloc: std.mem.Allocator, start_cap: usize) !Stack(T) {
-            if (start_cap == 0) return error.Cap0NotAllowed;
-
+        pub fn init(alloc: std.mem.Allocator, start_cap: usize) Stack(T) {
             return Stack(T){
                 .alloc = alloc,
-                .buf = try alloc.alloc(T, start_cap),
+                .buf = alloc.alloc(T, start_cap) catch crash(error.OOM),
                 .cap = start_cap,
             };
         }

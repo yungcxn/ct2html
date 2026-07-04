@@ -1,6 +1,7 @@
 !style:value
 !header:othervalue
 !raw:<!-- this is a comment -->
+@import(0_correct/base_attr.ct)
 
 Here is some *bold-containing* text, and some **italic-containing** txt.
 ***both***,
@@ -47,13 +48,7 @@ o
 The end before the end.
 
 
-1. Usual list
-2. Item2
-3. Item Item *BoldItem* Item x
-   that goes also multiline? 
-   will this work?
-   I hope
-4. another item 
+@import(0_correct/some_list.ct)
 
 4. List starting at another number
 5.Another Number
@@ -72,5 +67,7 @@ Here I want @link(https://www.google.com) without a name,
 and @link(https://www.google.com, with a name)...
 
 Here is some @raw(<div>raw html</div>) and some @raw(<span>inline raw html</span>).
+
+?@img(img, text)
 
 The end!

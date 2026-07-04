@@ -34,8 +34,8 @@ pub const L0Kind = enum(u32) {
     nonparagraph,
     paragraph,
 
-    footnote,
-    footnote_block,
+    footnote, // TODO
+    footnote_block, // TODO
 
     code_block, // TODO, ``` with prism code class e.g. language-python in same name, otherwise err
 
