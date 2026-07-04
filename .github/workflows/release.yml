@@ -22,6 +22,7 @@ jobs:
 
   test:
     needs: prepare
+    if: needs.prepare.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -31,7 +32,8 @@ jobs:
       - run: zig test test.zig
 
   release:
-    needs: test
+    needs: [prepare, test]
+    if: needs.prepare.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
