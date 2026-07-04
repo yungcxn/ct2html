@@ -121,7 +121,10 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) void {
     self.cursor = l0node.span.?[0];
     const node_end = l0node.span.?[1];
     while (self.bounded_pop(node_end)) |c| {
-        if (c == '\\') continue; // we ignore the next char, since it's escaped
+        if (c == '\\') {
+            _ = self.bounded_pop(node_end); // skip escaped char
+            continue;
+        }
         inline for (l1_rules.def) |rule| {
             if (rule.in_triggers(c)) {
                 const l1node = rule.parse_node(self, node_end) catch ErrorReporter.throw();

@@ -51,10 +51,22 @@ fn l1capture_rule(
                 }
 
                 // cursor is at first letter after capture, much like in `capture_for`
-                const chars_in_capture = p.bounded_findc(trigger, endat) catch {
-                    file_report(error.L1Capture, true, "Post-capture not found", level);
-                    return L1SyntaxError;
-                };
+                var chars_in_capture: usize = 0;
+                while (true) {
+                    chars_in_capture += p.bounded_findc(trigger, endat) catch {
+                        file_report(error.L1Capture, true, "Post-capture not found", level);
+                        return L1SyntaxError;
+                    };
+                    // cursor is on trigger, and `chars_in_capture` includes '\\'
+                    if (p.text[p.cursor - 1] == '\\') {
+                        // escaped trigger, so we skip it and continue searching
+                        chars_in_capture += 1; // include capture
+                        p.cursor += 1; // skip the trigger
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
 
                 // cursor is on the first of the capture, repeat
                 const capturec2 = p.bounded_skipc(trigger, endat) catch {
@@ -116,10 +128,23 @@ fn command(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
     }
 
     p.inc(); // cursor is now on first letter of arg
-    const argcharc = p.bounded_findc(')', endat) catch {
-        file_report(error.L1Command, true, "Missing command argument", cmd_kind);
-        return L1SyntaxError;
-    };
+
+    var argcharc: usize = 0;
+    while (true) {
+        argcharc += p.bounded_findc(')', endat) catch {
+            file_report(error.L1Command, true, "Missing command argument", cmd_kind);
+            return L1SyntaxError;
+        };
+        // cursor is on trigger, and `argcharc` includes '\\'
+        if (p.text[p.cursor - 1] == '\\') {
+            // escaped trigger, so we skip it and continue searching
+            argcharc += 1; // include capture
+            p.cursor += 1; // skip the trigger
+            continue;
+        } else {
+            break;
+        }
+    }
 
     if (argcharc == 0) {
         file_report(error.L1Command, true, "Missing command argument", cmd_kind);
