@@ -47,5 +47,9 @@ pub fn DynBuf(T: type) type {
         pub fn to_slice(self: DynBuf(T)) []T {
             return self.buf[0..self.head];
         }
+
+        pub fn buf_ptr(self: *DynBuf(T)) *[]T {
+            return &self.buf;
+        }
     };
 }

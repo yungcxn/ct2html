@@ -15,7 +15,6 @@ pub const ParsingError = error{
     OutOfBounds,
 };
 
-arenalloc: std.mem.Allocator,
 io: std.Io, // for error logging only
 e: *ErrorReporter,
 text: []const u8,
@@ -28,22 +27,26 @@ l1nodes: DynBuf(Node.L1),
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 
 pub fn init(
-    arenalloc: std.mem.Allocator,
+    alloc: std.mem.Allocator,
     io: std.Io,
     e: *ErrorReporter,
     text: []const u8,
     htmlerror: bool,
 ) @This() {
     return .{
-        .arenalloc = arenalloc,
         .io = io,
         .text = text,
         .cursor = 0,
-        .l0nodes = .init(arenalloc, 4096),
-        .l1nodes = .init(arenalloc, 4096),
+        .l0nodes = .init(alloc, 4096),
+        .l1nodes = .init(alloc, 4096),
         .e = e,
         .htmlerror = htmlerror,
     };
+}
+
+pub fn deinit(self: *@This()) void {
+    self.l0nodes.deinit();
+    self.l1nodes.deinit();
 }
 
 // returns blockend, sends cursor to first block sign.

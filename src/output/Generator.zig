@@ -17,7 +17,6 @@ pub const GenError = error{
     UnnecessaryNodePresented,
 };
 
-arenalloc: std.mem.Allocator, // is only for this generator -> exclusively owned
 io: std.Io, // for logging and writing to file
 e: *ErrorReporter,
 
@@ -32,7 +31,7 @@ htmlerror: bool = false, // if true, we print the error as HTML instead of plain
 responsemode: bool = false, // if true, we print the response header for HTML
 
 pub fn init(
-    arenalloc: std.mem.Allocator,
+    alloc: std.mem.Allocator,
     io: std.Io,
     e: *ErrorReporter,
     textin: []const u8,
@@ -42,7 +41,6 @@ pub fn init(
     responsemode: bool,
 ) @This() {
     return .{
-        .arenalloc = arenalloc,
         .io = io,
         .e = e,
         .textin = textin,
@@ -50,7 +48,7 @@ pub fn init(
         .l1nodes = l1nodes,
         .htmlerror = htmlerror,
         .responsemode = responsemode,
-        .outbuf = DynBuf(u8).init(arenalloc, textin.len * 2),
+        .outbuf = DynBuf(u8).init(alloc, textin.len * 2),
     };
 }
 
@@ -64,7 +62,7 @@ pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void 
 
 // TODO beautify out by indenting
 // TODO io_uring?
-pub fn build_out(self: *@This()) GenError!void {
+pub fn generate_out(self: *@This()) GenError![]const u8 {
     if (self.responsemode) {
         self.outbuf.append("Content-Type: text/html; charset=UTF-8\r\n\r\n");
     }
@@ -147,4 +145,6 @@ pub fn build_out(self: *@This()) GenError!void {
             toprint0 = l1node.span[1] + l1node.margin[1];
         }
     }
+
+    return self.outbuf.to_slice();
 }

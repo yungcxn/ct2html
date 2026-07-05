@@ -111,7 +111,7 @@ pub fn main(init: std.process.Init) void {
 }
 
 pub fn run(
-    arenalloc: std.mem.Allocator,
+    alloc: std.mem.Allocator,
     io: std.Io,
     comptime pass_buf: bool,
     cwd: std.Io.Dir,
@@ -121,39 +121,54 @@ pub fn run(
     responsemode: bool,
     debug: bool,
 ) if (pass_buf) []const u8 else RunError!void {
-    var error_reporter = ErrorReporter.init(arenalloc, io, htmlerror, responsemode);
+    var error_reporter = ErrorReporter.init(alloc, io, htmlerror, responsemode);
 
+    // this allocates the preprocessed text []const u8
     const preprocessed_text: []const u8 = Preprocessor.preprocess(
-        arenalloc,
+        alloc,
         io,
         &error_reporter,
         cwd,
         in_file,
     ) catch |filewalkerr| {
         if (error_reporter.err_reported) {
-            if (comptime pass_buf) return error_reporter.outbuf.to_slice() else {
-                out_file.?.writeStreamingAll(io, error_reporter.outbuf.to_slice()) catch |err| crash(err);
+            if (comptime pass_buf) {
+                return error_reporter.outbuf.to_slice();
+            } else {
+                out_file.?.writeStreamingAll(
+                    io,
+                    error_reporter.outbuf.to_slice(),
+                ) catch |err| crash(err);
                 return filewalkerr;
             }
         } else crash(error.ThrowWithoutReport);
     };
+    defer alloc.free(preprocessed_text);
 
     if (debug) std.debug.print("Preprocessed text: {s}\n", .{preprocessed_text});
 
+    // this allocates the l0nodes and l1nodes dynbufs only, which get removed
+    // when deiniting
     var parser = Parser.init(
-        arenalloc,
+        alloc,
         io,
         &error_reporter,
         preprocessed_text,
         htmlerror,
     );
+    defer parser.deinit();
 
     error_reporter.set_parser(&parser);
 
     parser.build_nodes() catch |parserr| {
         if (error_reporter.err_reported) {
-            if (comptime pass_buf) return error_reporter.outbuf.to_slice() else {
-                out_file.?.writeStreamingAll(io, error_reporter.outbuf.to_slice()) catch |err| crash(err);
+            if (comptime pass_buf) {
+                return error_reporter.outbuf.to_slice();
+            } else {
+                out_file.?.writeStreamingAll(
+                    io,
+                    error_reporter.outbuf.to_slice(),
+                ) catch |err| crash(err);
                 return parserr;
             }
         } else crash(error.ThrowWithoutReport);
@@ -161,8 +176,9 @@ pub fn run(
 
     if (debug) parser.debug_print();
 
+    // is not defered since only the buffer from the generated HTML file is alloc'd
     var generator = Generator.init(
-        arenalloc,
+        alloc,
         io,
         &error_reporter,
         preprocessed_text,
@@ -172,19 +188,30 @@ pub fn run(
         responsemode,
     );
 
-    generator.build_out() catch |generr| {
+    // `Generator` only allocates the buffer behind `outbuf`
+    // Caller owns `outbuf`, and nothing else remains on heap (if `pass_buf`)
+    const outbuf = generator.generate_out() catch |generr| {
         if (error_reporter.err_reported) {
-            if (comptime pass_buf) return error_reporter.outbuf.to_slice() else {
-                out_file.?.writeStreamingAll(io, error_reporter.outbuf.to_slice()) catch |err| crash(err);
+            if (comptime pass_buf) {
+                return error_reporter.outbuf.to_slice();
+            } else {
+                out_file.?.writeStreamingAll(
+                    io,
+                    error_reporter.outbuf.to_slice(),
+                ) catch |err| crash(err);
                 return generr;
             }
         } else crash(error.ThrowWithoutReport);
     };
 
     if (comptime pass_buf) {
-        return generator.outbuf.to_slice();
+        return outbuf;
     } else {
-        out_file.?.writeStreamingAll(io, generator.outbuf.to_slice()) catch |err| crash(err);
+        out_file.?.writeStreamingAll(
+            io,
+            outbuf,
+        ) catch |err| crash(err);
+        alloc.free(outbuf);
     }
 }
 
