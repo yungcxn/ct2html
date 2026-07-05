@@ -4,7 +4,8 @@ const net = std.Io.net;
 const http = std.http;
 const crash = @import("ErrorReporter.zig").crash;
 
-const extra_headers = [_]http.Header{
+const headers = [_]http.Header{
+    .{ .name = "Content-Type", .value = "text/html; charset=UTF-8" },
     .{ .name = "X-Content-Type-Options", .value = "nosniff" },
     .{ .name = "Cache-Control", .value = "no-store" },
 };
@@ -81,7 +82,7 @@ fn handle_req(
     req: *http.Server.Request,
 ) !void {
     if (req.head.method != .GET) {
-        try req.respond("", .{ .status = .method_not_allowed, .extra_headers = &extra_headers });
+        try req.respond("", .{ .status = .method_not_allowed, .extra_headers = &headers });
         return;
     }
 
@@ -99,11 +100,11 @@ fn handle_req(
         error.FileNotFound => {
             try req.respond(
                 "File not found",
-                .{ .status = .not_found, .extra_headers = &extra_headers },
+                .{ .status = .not_found, .extra_headers = &headers },
             );
             return;
         },
     };
 
-    try req.respond(response_body, .{ .status = .ok, .extra_headers = &extra_headers });
+    try req.respond(response_body, .{ .status = .ok, .extra_headers = &headers });
 }

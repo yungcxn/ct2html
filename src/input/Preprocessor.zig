@@ -9,9 +9,10 @@ const crash = @import("../ErrorReporter.zig").crash;
 // @import("file") as long as there's no \ before @
 // if \, then command parsing skips it regardless, not adjustment needed
 
-// recursive, since we do not have a huge chain of imports, so stack remains small
+// this returns an allocated dynbuf slice of the preprocessed text, nothing else
+// is to be allocated out of here
 pub fn preprocess(
-    arenalloc: std.mem.Allocator,
+    alloc: std.mem.Allocator,
     io: std.Io,
     e: *ErrorReporter,
     cwd: std.Io.Dir,
@@ -20,13 +21,13 @@ pub fn preprocess(
     var fbytes: []u8 = undefined;
     // `fbytes` is the `file0` buffer, which is freed in `walk_and_merge`
     if (file0.handle == std.Io.File.stdin().handle) {
-        fbytes = filex.alloc_stdin_bytes(arenalloc, io, file0);
+        fbytes = filex.alloc_stdin_bytes(alloc, io, file0);
     } else {
-        fbytes = filex.alloc_file_bytes(arenalloc, io, file0);
+        fbytes = filex.alloc_file_bytes(alloc, io, file0);
     }
-    var dynbuf = DynBuf(u8).init(arenalloc, fbytes.len * 2);
+    var dynbuf = DynBuf(u8).init(alloc, fbytes.len * 2);
 
-    try walk_and_merge(arenalloc, io, e, &dynbuf, cwd, file0, fbytes);
+    try walk_and_merge(alloc, io, e, &dynbuf, cwd, file0, fbytes);
 
     // only `try` since we try to propagate the test error when in testmode
 
@@ -58,6 +59,16 @@ fn walk_and_merge(
     var file_stack = Stack(std.Io.File).init(alloc, 4);
     defer file_stack.deinit();
     file_stack.push(file0);
+
+    errdefer {
+        while (file_stack.pop()) |file| {
+            filex.close(io, file);
+        }
+
+        while (sbuf_stack.pop()) |sbuf| {
+            alloc.free(sbuf.buf);
+        }
+    }
 
     while (sbuf_stack.peek_addr()) |sbuf| {
         const start_cursor = sbuf.cursor;

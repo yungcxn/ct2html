@@ -197,11 +197,11 @@ fn generate_response(
     var path2 = path;
     if (path[0] == '/') path2 = path[1..]; // remove leading slash
 
-    std.log.info("Generating response for path: {s}\n", .{path2});
+    std.log.info("requested: {s}", .{path2});
 
     const in_file = filex.open(io, cwd, path2) catch return error.FileNotFound;
 
     // run and build generator.outbuf, but on some user-induced error, throw
     // without exiting to fill the outbuf of the error reporter.
-    return run(alloc, io, true, cwd, in_file, null, true, true, false);
+    return run(alloc, io, true, cwd, in_file, null, true, false, false);
 }
