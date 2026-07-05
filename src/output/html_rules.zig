@@ -3,9 +3,6 @@ const Generator = @import("Generator.zig");
 const Node = @import("../element/Node.zig");
 const Rule = @import("../element/Rule.zig");
 
-pub const Error = error{};
-const GeneratorError = Generator.Error;
-
 // TODO: arabic parser
 pub const def = [_]Rule.Gen{
     .def(.begin, "<!DOCTYPE html><html>"),
@@ -59,7 +56,7 @@ pub const def = [_]Rule.Gen{
     .def(@as(Node.L1Kind, .script), .{ "<script src=\"", "\"></script>" }),
 };
 
-fn command_link(g: *Generator, span: @Vector(2, usize)) GeneratorError!void {
+fn command_link(g: *Generator, span: @Vector(2, usize)) Generator.GenError!void {
     for (g.textin[span[0]..span[1]], 0..) |c, i| {
         if (c == ',') {
             g.print("<a href='");
@@ -78,7 +75,7 @@ fn command_link(g: *Generator, span: @Vector(2, usize)) GeneratorError!void {
     g.print("</a>");
 }
 
-fn command_img(g: *Generator, span: @Vector(2, usize)) GeneratorError!void {
+fn command_img(g: *Generator, span: @Vector(2, usize)) Generator.GenError!void {
     for (g.textin[span[0]..span[1]], 0..) |c, i| {
         if (c == ',') {
             g.print("<figure><img src='");

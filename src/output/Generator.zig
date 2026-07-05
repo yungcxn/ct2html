@@ -9,7 +9,7 @@ const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 // TODO: caching by saving outfile at /tmp/ct2html/datetimenanoseconds.html (faster than hash)
 // TODO: print special non ascii chars correctly...
 
-pub const Error = error{
+pub const GenError = error{
     OOM,
     L0NodeNotFound,
     NoL1RuleForKind,
@@ -19,14 +19,14 @@ pub const Error = error{
 
 arenalloc: std.mem.Allocator, // is only for this generator -> exclusively owned
 io: std.Io, // for logging and writing to file
+e: *ErrorReporter,
 
 textin: []const u8, // borrowed from parser
 
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
-stage_outbuf: DynBuf(u8),
-outf: std.Io.File,
+outbuf: DynBuf(u8),
 
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 responsemode: bool = false, // if true, we print the response header for HTML
@@ -34,28 +34,28 @@ responsemode: bool = false, // if true, we print the response header for HTML
 pub fn init(
     arenalloc: std.mem.Allocator,
     io: std.Io,
+    e: *ErrorReporter,
     textin: []const u8,
     l0nodes: DynBuf(Node.L0),
     l1nodes: DynBuf(Node.L1),
-    outf: std.Io.File,
     htmlerror: bool,
     responsemode: bool,
 ) @This() {
     return .{
         .arenalloc = arenalloc,
         .io = io,
+        .e = e,
         .textin = textin,
         .l0nodes = l0nodes,
         .l1nodes = l1nodes,
-        .outf = outf,
         .htmlerror = htmlerror,
         .responsemode = responsemode,
-        .stage_outbuf = DynBuf(u8).init(arenalloc, textin.len * 2),
+        .outbuf = DynBuf(u8).init(arenalloc, textin.len * 2),
     };
 }
 
 pub inline fn print(self: *@This(), text: []const u8) void {
-    self.stage_outbuf.append(text);
+    self.outbuf.append(text);
 }
 
 pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void {
@@ -64,12 +64,9 @@ pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void 
 
 // TODO beautify out by indenting
 // TODO io_uring?
-pub fn print_out(self: *@This()) void {
+pub fn build_out(self: *@This()) GenError!void {
     if (self.responsemode) {
-        self.outf.writeStreamingAll(
-            self.io,
-            "Content-Type: text/html; charset=UTF-8\r\n\r\n",
-        ) catch |err| ErrorReporter.crash(err);
+        self.outbuf.append("Content-Type: text/html; charset=UTF-8\r\n\r\n");
     }
 
     for (self.l0nodes.to_slice()) |l0node| {
@@ -84,7 +81,7 @@ pub fn print_out(self: *@This()) void {
         }
 
         if (l0rule == null) {
-            return ErrorReporter.crash(Error.UnnecessaryNodePresented);
+            return ErrorReporter.crash(GenError.UnnecessaryNodePresented);
         }
 
         const l0pretext = switch (l0rule.?.algo) {
@@ -131,7 +128,7 @@ pub fn print_out(self: *@This()) void {
                     break;
                 }
             }
-            if (l1rule == null) return ErrorReporter.crash(Error.NoL1RuleForKind);
+            if (l1rule == null) return ErrorReporter.crash(GenError.NoL1RuleForKind);
 
             switch (l1rule.?.algo) {
                 .text => |text| {
@@ -143,18 +140,11 @@ pub fn print_out(self: *@This()) void {
                     self.print(pair.post);
                 },
                 .print => |f| {
-                    f(self, l1node.span) catch |err| return ErrorReporter.crash(err);
+                    try f(self, l1node.span);
                 },
             }
 
             toprint0 = l1node.span[1] + l1node.margin[1];
         }
     }
-
-    self.outf.writeStreamingAll(
-        self.io,
-        self.stage_outbuf.to_slice(),
-    ) catch |err| return ErrorReporter.crash(err);
-
-    self.stage_outbuf.deinit(); // not needed anymore
 }

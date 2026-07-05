@@ -3,7 +3,7 @@ const filex = @import("../filex.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 const Stack = @import("../ds/stack.zig").Stack;
 const ByteStream = @import("../ds/ByteStream.zig");
-const file_report = @import("../ErrorReporter.zig").file_report;
+const ErrorReporter = @import("../ErrorReporter.zig");
 const crash = @import("../ErrorReporter.zig").crash;
 
 // @import("file") as long as there's no \ before @
@@ -13,6 +13,7 @@ const crash = @import("../ErrorReporter.zig").crash;
 pub fn preprocess(
     arenalloc: std.mem.Allocator,
     io: std.Io,
+    e: *ErrorReporter,
     cwd: std.Io.Dir,
     file0: std.Io.File,
 ) FileWalkError![]const u8 {
@@ -25,7 +26,7 @@ pub fn preprocess(
     }
     var dynbuf = DynBuf(u8).init(arenalloc, fbytes.len * 2);
 
-    try walk_and_merge(arenalloc, io, &dynbuf, cwd, file0, fbytes);
+    try walk_and_merge(arenalloc, io, e, &dynbuf, cwd, file0, fbytes);
 
     // only `try` since we try to propagate the test error when in testmode
 
@@ -42,6 +43,7 @@ pub const FileWalkError = error{
 fn walk_and_merge(
     alloc: std.mem.Allocator,
     io: std.Io,
+    e: *ErrorReporter,
     dynbuf: *DynBuf(u8),
     cwd: std.Io.Dir,
     file0: std.Io.File,
@@ -64,7 +66,7 @@ fn walk_and_merge(
             alloc.free(sbuf.buf);
             _ = sbuf_stack.pop();
             if (file_stack.pop()) |file| {
-                filex.safeclose(io, file);
+                filex.close(io, file);
             }
             continue; // reading file is done; next
         };
@@ -90,22 +92,24 @@ fn walk_and_merge(
         }
 
         const arg_span = sbuf.take_exc(')') orelse {
-            return file_report(FileWalkError.NoImportArg, false, "No enclosing ')'", null);
+            return e.file_report(FileWalkError.NoImportArg, false, "No enclosing ')'", null);
         };
 
         dynbuf.append(pre_at_span);
 
         const newfile_path: []const u8 = arg_span;
-        const newfile = try filex.safeopen(io, cwd, newfile_path);
+        const newfile = filex.open(io, cwd, newfile_path) catch |err| {
+            return e.file_report(err, false, .{ "Failed to open import file: {s}", .{newfile_path} }, null);
+        };
 
         // if newfile is in stack, we build a cycle, throw error
         // unwrapped since we currently peek into `file_stack` which guarantees atleast one elem
         for (file_stack.to_slice().?) |file| {
             if (file.handle != std.Io.File.stdin().handle) {
-                const stat_a = newfile.stat(io) catch |e| return crash(e);
-                const stat_b = file.stat(io) catch |e| return crash(e);
+                const stat_a = newfile.stat(io) catch |err| return crash(err);
+                const stat_b = file.stat(io) catch |err| return crash(err);
                 if (stat_a.inode == stat_b.inode) {
-                    return file_report(
+                    return e.file_report(
                         FileWalkError.ImportCycle,
                         false,
                         .{ "Import cycle detected: {s}", .{newfile_path} },

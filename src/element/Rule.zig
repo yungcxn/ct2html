@@ -3,6 +3,7 @@ const Parser = @import("../input/Parser.zig");
 const Generator = @import("../output/Generator.zig");
 const Node = @import("Node.zig");
 const hack = @import("../hack.zig");
+const ErrorReporter = @import("../ErrorReporter.zig");
 
 pub const L0 = struct {
     triggers: []const u8 = &.{}, // null: e.g. paragraph
@@ -60,7 +61,7 @@ pub const Gen = struct {
         prepost: struct { pre: []const u8, post: []const u8 },
 
         // only for l1:
-        print: *const fn (g: *Generator, span: @Vector(2, usize)) Generator.Error!void,
+        print: *const fn (g: *Generator, span: @Vector(2, usize)) Generator.GenError!void,
     },
 
     pub fn def(comptime kind: anytype, algoval: anytype) Gen {

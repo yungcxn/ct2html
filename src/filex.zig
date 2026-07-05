@@ -13,7 +13,7 @@ pub const FileError = error{
     NotADir,
 };
 
-pub fn safeopen_dir(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.Dir {
+pub fn open_dir(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.Dir {
     if (cwd == null and std.mem.eql(u8, path, ".")) {
         return std.Io.Dir.cwd();
     }
@@ -26,23 +26,13 @@ pub fn safeopen_dir(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!st
     }
 
     return dir.openDir(io, path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return file_report(
-            FileError.FileNotFound,
-            false,
-            .{ "Directory not found: {s}", .{path} },
-            null,
-        ),
-        error.NotDir => return file_report(
-            FileError.NotADir,
-            false,
-            .{ "Path is not a directory: {s}", .{path} },
-            null,
-        ),
+        error.FileNotFound => return FileError.FileNotFound,
+        error.NotDir => return FileError.NotADir,
         else => return crash(err),
     };
 }
 
-pub fn safeopen(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.File {
+pub fn open(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.File {
     if (std.mem.eql(u8, path, "stdin")) {
         return std.Io.File.stdin();
     } else if (std.mem.eql(u8, path, "stdout")) {
@@ -51,36 +41,26 @@ pub fn safeopen(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io
 
     // this is important for security reasons
     if (!std.mem.endsWith(u8, path, ".ct")) {
-        return file_report(
-            FileError.InvalidFileExtension,
-            false,
-            .{ "Input file must have a .ct extension: {s}", .{path} },
-            null,
-        );
+        return FileError.InvalidFileExtension;
     }
 
     var dir = std.Io.Dir.cwd();
     if (cwd) |non_default_cwd| dir = non_default_cwd;
 
     return dir.openFile(io, path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return file_report(
-            FileError.FileNotFound,
-            false,
-            .{ "File not found: {s}", .{path} },
-            null,
-        ),
+        error.FileNotFound => return FileError.FileNotFound,
         else => return crash(err),
     };
 }
 
-pub fn safeclose(io: std.Io, file: std.Io.File) void {
+pub fn close(io: std.Io, file: std.Io.File) void {
     if (file.handle == std.Io.File.stdin().handle or file.handle == std.Io.File.stdout().handle) {
         return;
     }
     file.close(io);
 }
 
-pub fn safeclose_dir(io: std.Io, dir: std.Io.Dir) void {
+pub fn close_dir(io: std.Io, dir: std.Io.Dir) void {
     if (dir.handle == std.Io.Dir.cwd().handle) {
         return;
     }

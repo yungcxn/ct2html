@@ -34,7 +34,7 @@ fn l1capture_rule(
             pub fn capture(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
                 p.dec(); // to get cursor back to the first char on trigger
                 const capturec = p.bounded_skipc(trigger, endat) catch {
-                    return file_report(error.L1SyntaxError, true, "Pre-capture not found", null);
+                    return p.e.file_report(error.L1SyntaxError, true, "Pre-capture not found", null);
                 };
                 const text_start = p.cursor;
 
@@ -45,14 +45,14 @@ fn l1capture_rule(
                     }
                 }
                 if (level == null) {
-                    return file_report(error.L1SyntaxError, true, "No node kind for capture count", null);
+                    return p.e.file_report(error.L1SyntaxError, true, "No node kind for capture count", null);
                 }
 
                 // cursor is at first letter after capture, much like in `capture_for`
                 var chars_in_capture: usize = 0;
                 while (true) {
                     chars_in_capture += p.bounded_findc(trigger, endat) catch {
-                        return file_report(error.L1SyntaxError, true, "Post-capture not found", level);
+                        return p.e.file_report(error.L1SyntaxError, true, "Post-capture not found", level);
                     };
                     // cursor is on trigger, and `chars_in_capture` includes '\\'
                     if (p.text[p.cursor - 1] == '\\') {
@@ -67,12 +67,12 @@ fn l1capture_rule(
 
                 // cursor is on the first of the capture, repeat
                 const capturec2 = p.bounded_skipc(trigger, endat) catch {
-                    return file_report(error.L1SyntaxError, true, "Post-capture not found", level);
+                    return p.e.file_report(error.L1SyntaxError, true, "Post-capture not found", level);
                 };
 
                 // e.g. ***txt-in-capture*** => capturec = 3, capturec2 = 3, must be same
                 if (capturec2 != capturec) {
-                    return file_report(error.L1SyntaxError, true, "Capture mismatch", level);
+                    return p.e.file_report(error.L1SyntaxError, true, "Capture mismatch", level);
                 }
 
                 return Node.L1{
@@ -93,16 +93,16 @@ fn command(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
     const name_start = p.cursor;
 
     const namec = p.bounded_findc('(', endat) catch {
-        return file_report(error.L1SyntaxError, true, "Missing command name", null);
+        return p.e.file_report(error.L1SyntaxError, true, "Missing command name", null);
     };
 
     if (namec == 0) {
-        return file_report(error.L1SyntaxError, true, "Missing command name", null);
+        return p.e.file_report(error.L1SyntaxError, true, "Missing command name", null);
     }
 
     // cursor is on '('
     if (!p.bounds_freeof_whitesp(name_start, p.cursor)) {
-        return file_report(error.L1SyntaxError, true, "White space in command name not allowed", null);
+        return p.e.file_report(error.L1SyntaxError, true, "White space in command name not allowed", null);
     }
 
     const cmd_name = p.text[name_start..p.cursor];
@@ -110,11 +110,11 @@ fn command(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
         Node.L1Kind,
         cmd_name,
     ) orelse {
-        return file_report(error.L1SyntaxError, true, "Unknown command name", null);
+        return p.e.file_report(error.L1SyntaxError, true, "Unknown command name", null);
     };
 
     if (!cmd_kind.is_command()) {
-        return file_report(error.L1SyntaxError, true, "Unknown command name", null);
+        return p.e.file_report(error.L1SyntaxError, true, "Unknown command name", null);
     }
 
     p.inc(); // cursor is now on first letter of arg
@@ -122,7 +122,7 @@ fn command(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
     var argcharc: usize = 0;
     while (true) {
         argcharc += p.bounded_findc(')', endat) catch {
-            return file_report(error.L1SyntaxError, true, "Missing command argument", cmd_kind);
+            return p.e.file_report(error.L1SyntaxError, true, "Missing command argument", cmd_kind);
         };
         // cursor is on trigger, and `argcharc` includes '\\'
         if (p.text[p.cursor - 1] == '\\') {
@@ -136,7 +136,7 @@ fn command(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
     }
 
     if (argcharc == 0) {
-        return file_report(error.L1SyntaxError, true, "Missing command argument", cmd_kind);
+        return p.e.file_report(error.L1SyntaxError, true, "Missing command argument", cmd_kind);
     }
 
     // cursor is on ')', so for push we inc again after return

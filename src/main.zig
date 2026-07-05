@@ -8,10 +8,11 @@ const ErrorReporter = @import("ErrorReporter.zig");
 const crash = ErrorReporter.crash;
 const file_report = ErrorReporter.file_report;
 const throw = ErrorReporter.throw;
+const webserver = @import("webserver.zig");
 
 // these errors get thrown through the reporting system of `ErrorReporter`
 
-pub const RunError = filex.FileError || Preprocessor.FileWalkError || Parser.ParsingError;
+pub const RunError = filex.FileError || Preprocessor.FileWalkError || Parser.ParsingError || Generator.GenError;
 
 pub const argdef = .{
     argx.Arg([]const u8){
@@ -49,6 +50,12 @@ pub const argdef = .{
         .default = false,
         .desc = "Prints HTML response headers aswell",
     },
+    argx.Arg(bool){
+        .fieldname = "webservermode",
+        .short_altname = 'w',
+        .default = false,
+        .desc = "Runs in web server mode (on 127.0.0.1:8080)",
+    },
 };
 
 pub fn main(init: std.process.Init) void {
@@ -67,66 +74,134 @@ pub fn main(init: std.process.Init) void {
 
     const args = argx.parse(argdef, argslice, env_vars);
 
-    run(arena.allocator(), io, args) catch throw();
+    const cwd = filex.open_dir(io, null, args.cwd) catch |err| {
+        std.log.err("Failed to open cwd directory: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+    defer filex.close_dir(io, cwd);
+
+    if (args.webservermode) {
+        webserver.set_resp_body_constructor(&generate_response);
+        webserver.run(std.heap.smp_allocator, io, cwd);
+    } else {
+        const in_file = filex.open(io, cwd, args.in) catch |err| {
+            std.log.err("Failed to open input file: {s}", .{@errorName(err)});
+            std.process.exit(1);
+        };
+        errdefer filex.close(io, in_file); // closed in preprocessor
+
+        const out_file = filex.open(io, cwd, args.out) catch |err| {
+            std.log.err("Failed to open output file: {s}", .{@errorName(err)});
+            std.process.exit(1);
+        };
+        defer filex.close(io, out_file);
+
+        run(
+            arena.allocator(),
+            io,
+            false,
+            cwd,
+            in_file,
+            out_file,
+            args.htmlerror,
+            args.responsemode,
+            args.debug,
+        ) catch {}; // error is printed into the output file
+    }
 }
 
-// extra function for tests
 pub fn run(
     arenalloc: std.mem.Allocator,
     io: std.Io,
-    args: anytype,
-) RunError!void {
-    ErrorReporter.init_singleton(
+    comptime pass_buf: bool,
+    cwd: std.Io.Dir,
+    in_file: std.Io.File,
+    out_file: ?std.Io.File,
+    htmlerror: bool,
+    responsemode: bool,
+    debug: bool,
+) if (pass_buf) []const u8 else RunError!void {
+    var error_reporter = ErrorReporter.init(arenalloc, io, htmlerror, responsemode);
+
+    const preprocessed_text: []const u8 = Preprocessor.preprocess(
         arenalloc,
         io,
-        args.htmlerror,
-        args.responsemode,
-    );
-
-    const cwd_dir = try filex.safeopen_dir(io, null, args.cwd);
-    defer filex.safeclose_dir(io, cwd_dir);
-
-    const in_file = try filex.safeopen(io, cwd_dir, args.in);
-    errdefer filex.safeclose(io, in_file); // closed in preprocessor
-
-    const out_file = try filex.safeopen(io, cwd_dir, args.out);
-    defer filex.safeclose(io, out_file);
-
-    ErrorReporter.set_out_file(out_file);
-
-    const preprocessed_text: []const u8 = try Preprocessor.preprocess(
-        arenalloc,
-        io,
-        cwd_dir,
+        &error_reporter,
+        cwd,
         in_file,
-    );
+    ) catch |filewalkerr| {
+        if (error_reporter.err_reported) {
+            if (comptime pass_buf) return error_reporter.outbuf.to_slice() else {
+                out_file.?.writeStreamingAll(io, error_reporter.outbuf.to_slice()) catch |err| crash(err);
+                return filewalkerr;
+            }
+        } else crash(error.ThrowWithoutReport);
+    };
 
-    if (args.debug) std.debug.print("Preprocessed text: {s}\n", .{preprocessed_text});
+    if (debug) std.debug.print("Preprocessed text: {s}\n", .{preprocessed_text});
 
     var parser = Parser.init(
         arenalloc,
         io,
+        &error_reporter,
         preprocessed_text,
-        out_file,
-        args.htmlerror,
+        htmlerror,
     );
 
-    ErrorReporter.set_parser(&parser);
+    error_reporter.set_parser(&parser);
 
-    try parser.build_nodes();
+    parser.build_nodes() catch |parserr| {
+        if (error_reporter.err_reported) {
+            if (comptime pass_buf) return error_reporter.outbuf.to_slice() else {
+                out_file.?.writeStreamingAll(io, error_reporter.outbuf.to_slice()) catch |err| crash(err);
+                return parserr;
+            }
+        } else crash(error.ThrowWithoutReport);
+    };
 
-    if (args.debug) parser.debug_print();
+    if (debug) parser.debug_print();
 
     var generator = Generator.init(
         arenalloc,
         io,
+        &error_reporter,
         preprocessed_text,
         parser.l0nodes,
         parser.l1nodes,
-        out_file,
-        args.htmlerror,
-        args.responsemode,
+        htmlerror,
+        responsemode,
     );
 
-    generator.print_out();
+    generator.build_out() catch |generr| {
+        if (error_reporter.err_reported) {
+            if (comptime pass_buf) return error_reporter.outbuf.to_slice() else {
+                out_file.?.writeStreamingAll(io, error_reporter.outbuf.to_slice()) catch |err| crash(err);
+                return generr;
+            }
+        } else crash(error.ThrowWithoutReport);
+    };
+
+    if (comptime pass_buf) {
+        return generator.outbuf.to_slice();
+    } else {
+        out_file.?.writeStreamingAll(io, generator.outbuf.to_slice()) catch |err| crash(err);
+    }
+}
+
+fn generate_response(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    cwd: std.Io.Dir,
+    path: []const u8,
+) error{FileNotFound}![]const u8 {
+    var path2 = path;
+    if (path[0] == '/') path2 = path[1..]; // remove leading slash
+
+    std.log.info("Generating response for path: {s}\n", .{path2});
+
+    const in_file = filex.open(io, cwd, path2) catch return error.FileNotFound;
+
+    // run and build generator.outbuf, but on some user-induced error, throw
+    // without exiting to fill the outbuf of the error reporter.
+    return run(alloc, io, true, cwd, in_file, null, true, true, false);
 }

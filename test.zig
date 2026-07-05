@@ -1,6 +1,7 @@
 const std = @import("std");
-const argx = @import("src/argx.zig");
+const filex = @import("src/filex.zig");
 const main = @import("src/main.zig");
+const crash = @import("src/ErrorReporter.zig").crash;
 const expectError = std.testing.expectError;
 
 fn test_for_file(filepath: []const u8) main.RunError!void {
@@ -10,10 +11,12 @@ fn test_for_file(filepath: []const u8) main.RunError!void {
     defer arena.deinit();
     const arenalloc = arena.allocator();
 
-    const argslice: []const []const u8 = &.{ "ct2html", "-i", filepath, "-c", "test" };
-    const args = argx.parse(@import("src/main.zig").argdef, argslice, null);
+    const cwd = filex.safeopen_dir(std.testing.io, null, "test/") catch crash("cwd error");
+    defer filex.safeclose_dir(std.testing.io, cwd);
 
-    try main.run(arenalloc, std.testing.io, args);
+    const in_file = filex.safeopen(std.testing.io, cwd, filepath) catch crash("file open error");
+
+    try main.run(arenalloc, std.testing.io, false, cwd, in_file, std.Io.File.stdout(), false, false, false);
 }
 
 test "normal file" {

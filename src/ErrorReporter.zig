@@ -1,40 +1,38 @@
 const std = @import("std");
 const Node = @import("element/Node.zig");
 const Parser = @import("input/Parser.zig");
-const Generator = @import("Generator").Generator;
-
-var instance: ?@This() = null;
+const DynBuf = @import("ds/dynbuf.zig").DynBuf;
 
 arenalloc: std.mem.Allocator,
 io: std.Io,
+err_reported: bool = false,
+outbuf: DynBuf(u8),
 parser: ?*Parser = null,
-outf: std.Io.File = std.Io.File.stdout(),
 htmlmode: bool = false,
 responsemode: bool = false,
-prefiled_report: ?Report = null,
 
-pub fn init_singleton(
-    arenalloc: std.mem.Allocator,
+pub fn init(
+    alloc: std.mem.Allocator,
     io: std.Io,
     htmlmode: bool,
     responsemode: bool,
-) void {
-    instance = @This(){
-        .arenalloc = arenalloc,
+) @This() {
+    var newarena = std.heap.ArenaAllocator.init(alloc);
+    return @This(){
+        .arenalloc = newarena.allocator(),
         .io = io,
+        .outbuf = DynBuf(u8).init(newarena.allocator(), 100),
         .htmlmode = htmlmode,
         .responsemode = responsemode,
     };
 }
 
-pub fn set_out_file(outf: std.Io.File) void {
-    if (instance == null) crash(error.OutFileNotSet);
-    instance.?.outf = outf;
+pub fn deinit(self: *@This()) void {
+    self.arenalloc.deinit();
 }
 
-pub fn set_parser(parser: *Parser) void {
-    if (instance == null) crash(error.ParserNotSet);
-    instance.?.parser = parser;
+pub fn set_parser(self: *@This(), parser: *Parser) void {
+    self.parser = parser;
 }
 
 const Report = struct {
@@ -76,13 +74,14 @@ pub fn crash(err: anytype) noreturn {
 
 // this runs before any user induced error
 pub fn file_report(
+    self: *@This(),
     err: anytype,
     from_text: bool,
     texthint: anytype,
     node_or_kind: anytype,
 ) @TypeOf(err) {
-    const self = &instance.?;
-    self.prefiled_report = Report{
+    self.err_reported = true;
+    const report = Report{
         .err_name = @errorName(err),
         .from_text = from_text,
         .texthint = switch (@typeInfo(@TypeOf(texthint))) {
@@ -107,29 +106,18 @@ pub fn file_report(
             else => null,
         },
     };
+
+    self.build_report(report);
     return err;
 }
 
-pub fn throw() noreturn {
-    const self = &instance.?;
-    if (self.prefiled_report) |r| {
-        self.print_report(r);
-        return std.process.exit(1);
-    } else {
-        return crash(error.ThrowWithoutReport);
-    }
-}
-
-fn print_report(self: *@This(), r: Report) void {
+fn build_report(self: *@This(), r: Report) void {
     if (self.responsemode) {
-        self.outf.writeStreamingAll(
-            self.io,
-            "Content-Type: text/html; charset=UTF-8\r\n\r\n",
-        ) catch |err| crash(err);
+        self.outbuf.append("Content-Type: text/html; charset=UTF-8\r\n\r\n");
     }
 
     if (self.htmlmode) {
-        self.outf.writeStreamingAll(self.io,
+        self.outbuf.append(
             \\<!DOCTYPE html>
             \\<html>
             \\    <head>
@@ -137,7 +125,7 @@ fn print_report(self: *@This(), r: Report) void {
             \\    <title>Error</title>
             \\    </head>
             \\    <body>
-        ) catch |e| crash(e);
+        );
     }
 
     self.printf("Error: {s}", .{r.err_name});
@@ -189,22 +177,22 @@ fn print_report(self: *@This(), r: Report) void {
     if (r.texthint) |hint| self.printf("Hint: {s}", .{hint});
 
     if (self.htmlmode) {
-        self.outf.writeStreamingAll(self.io,
+        self.outbuf.append(
             \\    </body>
             \\</html>
-        ) catch |err| crash(err);
+        );
     }
 }
 
 fn println(self: *@This(), text: []const u8) void {
     if (!self.htmlmode) {
-        self.outf.writeStreamingAll(self.io, text) catch |e| crash(e);
+        self.outbuf.append(text);
     } else {
-        self.outf.writeStreamingAll(self.io, "<p><code style=\"white-space: pre;\">") catch |e| crash(e);
-        self.outf.writeStreamingAll(self.io, text) catch |e| crash(e);
-        self.outf.writeStreamingAll(self.io, "</code></p>") catch |e| crash(e);
+        self.outbuf.append("<p><code style=\"white-space: pre;\">");
+        self.outbuf.append(text);
+        self.outbuf.append("</code></p>");
     }
-    self.outf.writeStreamingAll(self.io, "\n") catch |e| crash(e);
+    self.outbuf.append("\n");
 }
 
 fn printf(self: *@This(), comptime fmt: []const u8, args: anytype) void {

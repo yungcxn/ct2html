@@ -17,6 +17,7 @@ pub const ParsingError = error{
 
 arenalloc: std.mem.Allocator,
 io: std.Io, // for error logging only
+e: *ErrorReporter,
 text: []const u8,
 // TODO maybe stream based?
 cursor: usize, // TODO we should provide a second cursor that replaces endat..
@@ -24,14 +25,13 @@ cursor: usize, // TODO we should provide a second cursor that replaces endat..
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
-error_outf: std.Io.File,
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 
 pub fn init(
     arenalloc: std.mem.Allocator,
     io: std.Io,
+    e: *ErrorReporter,
     text: []const u8,
-    error_outf: std.Io.File,
     htmlerror: bool,
 ) @This() {
     return .{
@@ -41,7 +41,7 @@ pub fn init(
         .cursor = 0,
         .l0nodes = .init(arenalloc, 4096),
         .l1nodes = .init(arenalloc, 4096),
-        .error_outf = error_outf,
+        .e = e,
         .htmlerror = htmlerror,
     };
 }
