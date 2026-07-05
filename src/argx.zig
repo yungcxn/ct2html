@@ -80,7 +80,7 @@ fn env_var_name(comptime fieldname: []const u8) [8 + fieldname.len]u8 {
 pub fn parse(
     comptime argdef_tuple: anytype,
     args: []const []const u8,
-    environ: std.process.Environ.Map,
+    environmap: ?std.process.Environ.Map,
 ) ArgsType(argdef_tuple) { // null: nothing was parsed due to -h/--help or no args
     const Args = ArgsType(argdef_tuple);
     var final_args: Args = .{};
@@ -138,20 +138,22 @@ pub fn parse(
         }
 
         // environment check
-        inline for (argdef_tuple, 0..) |argdef, idx| {
-            if (reqs_satisfied[idx] != .set) {
-                const env_name_buf = comptime env_var_name(argdef.fieldname);
-                const env_name: []const u8 = &env_name_buf;
-                if (environ.get(env_name)) |env_val| {
-                    if (argdef.T == bool) {
-                        @field(final_args, argdef.fieldname) = !std.mem.eql(u8, env_val, "false");
-                    } else {
-                        @field(final_args, argdef.fieldname) = cast(argdef.T, env_val) catch {
-                            std.log.err("Wrong value for env var {s}: {s}", .{ env_name, env_val });
-                            std.process.exit(1);
-                        };
+        if (environmap) |env| {
+            inline for (argdef_tuple, 0..) |argdef, idx| {
+                if (reqs_satisfied[idx] != .set) {
+                    const env_name_buf = comptime env_var_name(argdef.fieldname);
+                    const env_name: []const u8 = &env_name_buf;
+                    if (env.get(env_name)) |env_val| {
+                        if (argdef.T == bool) {
+                            @field(final_args, argdef.fieldname) = !std.mem.eql(u8, env_val, "false");
+                        } else {
+                            @field(final_args, argdef.fieldname) = cast(argdef.T, env_val) catch {
+                                std.log.err("Wrong value for env var {s}: {s}", .{ env_name, env_val });
+                                std.process.exit(1);
+                            };
+                        }
+                        reqs_satisfied[idx] = .set;
                     }
-                    reqs_satisfied[idx] = .set;
                 }
             }
         }

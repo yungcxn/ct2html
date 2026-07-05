@@ -11,7 +11,7 @@ fn test_for_file(filepath: []const u8) main.RunError!void {
     const arenalloc = arena.allocator();
 
     const argslice: []const []const u8 = &.{ "ct2html", "-i", filepath, "-c", "test" };
-    const args = argx.parse(@import("src/main.zig").argdef, argslice);
+    const args = argx.parse(@import("src/main.zig").argdef, argslice, null);
 
     try main.run(arenalloc, std.testing.io, args);
 }
