@@ -68,9 +68,19 @@ fn cast(comptime T: type, stringval: []const u8) !T {
     };
 }
 
+fn env_var_name(comptime fieldname: []const u8) [8 + fieldname.len]u8 {
+    var buf: [8 + fieldname.len]u8 = undefined;
+    @memcpy(buf[0..8], "CT2HTML_");
+    for (fieldname, 0..) |c, idx| {
+        buf[8 + idx] = std.ascii.toUpper(c);
+    }
+    return buf;
+}
+
 pub fn parse(
     comptime argdef_tuple: anytype,
     args: []const []const u8,
+    environ: std.process.Environ.Map,
 ) ArgsType(argdef_tuple) { // null: nothing was parsed due to -h/--help or no args
     const Args = ArgsType(argdef_tuple);
     var final_args: Args = .{};
@@ -80,9 +90,13 @@ pub fn parse(
         std.process.exit(0);
     }
 
-    var reqs_satisfied: [argdef_tuple.len]bool = undefined;
+    var reqs_satisfied: [argdef_tuple.len]enum {
+        set,
+        unset,
+        default,
+    } = undefined;
     inline for (argdef_tuple, 0..) |argdef, i| {
-        reqs_satisfied[i] = argdef.default != null;
+        reqs_satisfied[i] = if (argdef.default != null) .default else .unset;
     }
 
     var i: usize = 1;
@@ -119,7 +133,26 @@ pub fn parse(
                     };
                     i += 1; // consumed nextarg
                 }
-                reqs_satisfied[argdef_idx] = true;
+                reqs_satisfied[argdef_idx] = .set;
+            }
+        }
+
+        // environment check
+        inline for (argdef_tuple, 0..) |argdef, idx| {
+            if (reqs_satisfied[idx] != .set) {
+                const env_name_buf = comptime env_var_name(argdef.fieldname);
+                const env_name: []const u8 = &env_name_buf;
+                if (environ.get(env_name)) |env_val| {
+                    if (argdef.T == bool) {
+                        @field(final_args, argdef.fieldname) = !std.mem.eql(u8, env_val, "false");
+                    } else {
+                        @field(final_args, argdef.fieldname) = cast(argdef.T, env_val) catch {
+                            std.log.err("Wrong value for env var {s}: {s}", .{ env_name, env_val });
+                            std.process.exit(1);
+                        };
+                    }
+                    reqs_satisfied[idx] = .set;
+                }
             }
         }
 
@@ -130,7 +163,7 @@ pub fn parse(
     }
 
     inline for (argdef_tuple, 0..) |argdef, idx| {
-        if (!reqs_satisfied[idx]) {
+        if (reqs_satisfied[idx] != .set and reqs_satisfied[idx] != .default) {
             std.log.err("Missing required argument: --{s}", .{argdef.fieldname});
             std.process.exit(1);
         }

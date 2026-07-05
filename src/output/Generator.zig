@@ -29,6 +29,7 @@ stage_outbuf: DynBuf(u8),
 outf: std.Io.File,
 
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
+responsemode: bool = false, // if true, we print the response header for HTML
 
 pub fn init(
     arenalloc: std.mem.Allocator,
@@ -38,6 +39,7 @@ pub fn init(
     l1nodes: DynBuf(Node.L1),
     outf: std.Io.File,
     htmlerror: bool,
+    responsemode: bool,
 ) @This() {
     return .{
         .arenalloc = arenalloc,
@@ -47,6 +49,7 @@ pub fn init(
         .l1nodes = l1nodes,
         .outf = outf,
         .htmlerror = htmlerror,
+        .responsemode = responsemode,
         .stage_outbuf = DynBuf(u8).init(arenalloc, textin.len * 2),
     };
 }
@@ -62,6 +65,13 @@ pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void 
 // TODO beautify out by indenting
 // TODO io_uring?
 pub fn print_out(self: *@This()) void {
+    if (self.responsemode) {
+        self.outf.writeStreamingAll(
+            self.io,
+            "Content-Type: text/html; charset=UTF-8\r\n\r\n",
+        ) catch |err| ErrorReporter.crash(err);
+    }
+
     for (self.l0nodes.to_slice()) |l0node| {
         var l0rule: ?Rule.Gen = null;
         for (html_rules.def) |r| {

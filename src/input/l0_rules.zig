@@ -186,8 +186,8 @@ pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFin
                 },
                 else => {
                     // in this case we forbid something like this:
-                    // \\\- this-is-some\n
-                    // \\\unindented-text
+                    // \\- this-is-some\n
+                    // \\unindented-text
                     return file_report(error.L0SyntaxError, true, "Unindented line after dash item", Node.L0Kind.dash_item);
                 },
             }
@@ -266,8 +266,8 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFina
                     },
                     else => {
                         // in this case we forbid something like this:
-                        // \\\1. this-is-some\n
-                        // \\\unindented-text
+                        // \\1. this-is-some\n
+                        // \\unindented-text
                         return file_report(error.L0SyntaxError, true, "Unindented line after number item", Node.L0Kind.num_dot_item_text);
                     },
                 }

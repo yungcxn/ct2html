@@ -10,17 +10,20 @@ io: std.Io,
 parser: ?*Parser = null,
 outf: std.Io.File = std.Io.File.stdout(),
 htmlmode: bool = false,
+responsemode: bool = false,
 prefiled_report: ?Report = null,
 
 pub fn init_singleton(
     arenalloc: std.mem.Allocator,
     io: std.Io,
     htmlmode: bool,
+    responsemode: bool,
 ) void {
     instance = @This(){
         .arenalloc = arenalloc,
         .io = io,
         .htmlmode = htmlmode,
+        .responsemode = responsemode,
     };
 }
 
@@ -118,15 +121,22 @@ pub fn throw() noreturn {
 }
 
 fn print_report(self: *@This(), r: Report) void {
+    if (self.responsemode) {
+        self.outf.writeStreamingAll(
+            self.io,
+            "Content-Type: text/html; charset=UTF-8\r\n\r\n",
+        ) catch |err| crash(err);
+    }
+
     if (self.htmlmode) {
         self.outf.writeStreamingAll(self.io,
-            \\\<!DOCTYPE html>\n
-            \\\<html>\n
-            \\\    <head>\n
-            \\\    <meta charset=\"UTF-8\">\n
-            \\\    <title>Error</title>\n
-            \\\    </head>\n
-            \\\    <body>\n
+            \\<!DOCTYPE html>
+            \\<html>
+            \\    <head>
+            \\    <meta charset=\"UTF-8\">
+            \\    <title>Error</title>
+            \\    </head>
+            \\    <body>
         ) catch |e| crash(e);
     }
 
@@ -180,8 +190,8 @@ fn print_report(self: *@This(), r: Report) void {
 
     if (self.htmlmode) {
         self.outf.writeStreamingAll(self.io,
-            \\\    </body>\n
-            \\\</html>\n
+            \\    </body>
+            \\</html>
         ) catch |err| crash(err);
     }
 }

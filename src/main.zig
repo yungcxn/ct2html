@@ -7,6 +7,7 @@ const Generator = @import("output/Generator.zig");
 const ErrorReporter = @import("ErrorReporter.zig");
 const crash = ErrorReporter.crash;
 const file_report = ErrorReporter.file_report;
+const throw = ErrorReporter.throw;
 
 // these errors get thrown through the reporting system of `ErrorReporter`
 
@@ -42,6 +43,12 @@ pub const argdef = .{
         .default = false,
         .desc = "Print the error as HTML instead of plain text",
     },
+    argx.Arg(bool){
+        .fieldname = "responsemode",
+        .short_altname = 'r',
+        .default = false,
+        .desc = "Prints HTML response headers aswell",
+    },
 };
 
 pub fn main(init: std.process.Init) void {
@@ -54,9 +61,13 @@ pub fn main(init: std.process.Init) void {
         arena.allocator(),
     ) catch |err| ErrorReporter.crash(err);
 
-    const args = argx.parse(argdef, argslice);
+    const env_vars = init.minimal.environ.createMap(
+        arena.allocator(),
+    ) catch |err| ErrorReporter.crash(err);
 
-    run(arena.allocator(), io, args) catch std.process.exit(1);
+    const args = argx.parse(argdef, argslice, env_vars);
+
+    run(arena.allocator(), io, args) catch throw();
 }
 
 // extra function for tests
@@ -65,14 +76,18 @@ pub fn run(
     io: std.Io,
     args: anytype,
 ) RunError!void {
-    ErrorReporter.init_singleton(arenalloc, io, args.htmlerror);
+    ErrorReporter.init_singleton(
+        arenalloc,
+        io,
+        args.htmlerror,
+        args.responsemode,
+    );
 
     const cwd_dir = try filex.safeopen_dir(io, null, args.cwd);
     defer filex.safeclose_dir(io, cwd_dir);
 
     const in_file = try filex.safeopen(io, cwd_dir, args.in);
-    // normally closed through preprocessor
-    errdefer filex.safeclose(io, in_file);
+    errdefer filex.safeclose(io, in_file); // closed in preprocessor
 
     const out_file = try filex.safeopen(io, cwd_dir, args.out);
     defer filex.safeclose(io, out_file);
@@ -110,6 +125,7 @@ pub fn run(
         parser.l1nodes,
         out_file,
         args.htmlerror,
+        args.responsemode,
     );
 
     generator.print_out();
