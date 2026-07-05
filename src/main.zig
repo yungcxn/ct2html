@@ -112,7 +112,5 @@ pub fn run(
         args.htmlerror,
     );
 
-    defer generator.deinit();
-
     generator.print_out();
 }

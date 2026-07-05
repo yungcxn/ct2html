@@ -17,8 +17,6 @@ pub const Error = error{
     UnnecessaryNodePresented,
 };
 
-// arena so we destroy all of the strings at once
-arena: std.heap.ArenaAllocator,
 arenalloc: std.mem.Allocator, // is only for this generator -> exclusively owned
 io: std.Io, // for logging and writing to file
 
@@ -27,12 +25,13 @@ textin: []const u8, // borrowed from parser
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
-outf: std.Io.File, // TODO staging mem buf
+stage_outbuf: DynBuf(u8),
+outf: std.Io.File,
 
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 
 pub fn init(
-    arenabase: std.mem.Allocator,
+    arenalloc: std.mem.Allocator,
     io: std.Io,
     textin: []const u8,
     l0nodes: DynBuf(Node.L0),
@@ -40,28 +39,20 @@ pub fn init(
     outf: std.Io.File,
     htmlerror: bool,
 ) @This() {
-    var new_arena = std.heap.ArenaAllocator.init(arenabase);
     return .{
-        .arena = new_arena,
-        .arenalloc = new_arena.allocator(),
+        .arenalloc = arenalloc,
         .io = io,
         .textin = textin,
         .l0nodes = l0nodes,
         .l1nodes = l1nodes,
         .outf = outf,
         .htmlerror = htmlerror,
+        .stage_outbuf = DynBuf(u8).init(arenalloc, textin.len * 2),
     };
 }
 
-pub fn deinit(self: *@This()) void {
-    self.arena.deinit();
-}
-
 pub inline fn print(self: *@This(), text: []const u8) void {
-    self.outf.writeStreamingAll(
-        self.io,
-        text,
-    ) catch |err| return ErrorReporter.crash(err);
+    self.stage_outbuf.append(text);
 }
 
 pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void {
@@ -149,4 +140,11 @@ pub fn print_out(self: *@This()) void {
             toprint0 = l1node.span[1] + l1node.margin[1];
         }
     }
+
+    self.outf.writeStreamingAll(
+        self.io,
+        self.stage_outbuf.to_slice(),
+    ) catch |err| return ErrorReporter.crash(err);
+
+    self.stage_outbuf.deinit(); // not needed anymore
 }
