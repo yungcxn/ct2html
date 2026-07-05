@@ -1,0 +1,85 @@
+!style:5_csstest/style.css
+!script:https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js
+!style:https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css
+!script:https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js
+!script:https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js
+
+# CSS TEST
+
+This article $x = 5$ explores the concept of *energy* in modern physics.
+We also highlight **key equations** and experimental<sup><a id="fnref1" href="#fn1">1</a></sup> results.
+
+?<aside class="footnote-block" data-fn-num="✱">
+  For a detailed review, see <em>Smith et al. (2024)</em>. 
+  The effect size was large across all subgroups.
+</aside>
+
+
+## Key properties
+
+- Energy is conserved
+- Energy can change forms
+- Measured in joules (J)
+
+## Experimental results
+
+?<table>
+  <thead>
+    <tr>
+      <th>Experiment</th>
+      <th>Energy (J)</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Test A</td>
+      <td>12.4</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>Test B</td>
+      <td>9.8</td>
+      <td>Minor loss</td>
+    </tr>
+  </tbody>
+</table>
+
+## Code
+
+?<pre class="line-numbers"><code class="language-python">def energy(mass, c=299792458):
+    return math.pow(math.mul(mass, c), 2)</code></pre>
+
+## Quote
+
+?<blockquote>
+  "Energy cannot be created or destroyed, only transformed."
+</blockquote>
+
+## Figure
+
+?@img(https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Example.svg/960px-Example.svg.png, Sample physics equations)
+
+For further reading...
+
+<div class="footnotes">
+  <ol>
+    <li id="fn1">
+      The full explanation: this is the classic way to handle 
+      references in long‑form articles. 
+      <a class="fn-back" href="#fnref1" title="jump back">↩</a>
+    </li>
+    <!-- more <li> items as needed -->
+  </ol>
+</div>
+
+?<footer id="siteFooter">
+  <div class="footer-left">
+    <!-- Your custom text, e.g. “© 2025 Your Name” or a small quote -->
+    © 2025 Your Name · Built with care
+  </div>
+  <div class="footer-right">
+    <a href="/impressum">Impressum</a>
+    <a href="/cookies">Cookies</a>
+  </div>
+</footer>

@@ -18,6 +18,7 @@ pub const ParsingError = error{
 arenalloc: std.mem.Allocator,
 io: std.Io, // for error logging only
 text: []const u8,
+// TODO maybe stream based?
 cursor: usize, // TODO we should provide a second cursor that replaces endat..
 
 l0nodes: DynBuf(Node.L0),

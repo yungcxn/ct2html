@@ -47,3 +47,7 @@ test "chain importing with a dead end" {
         test_for_file("4_chain_import_not_found.ct"),
     );
 }
+
+test "more complex css containing test" {
+    try test_for_file("5_csstest.ct");
+}
