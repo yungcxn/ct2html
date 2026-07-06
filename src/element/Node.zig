@@ -21,6 +21,9 @@ pub const L0Kind = enum(u32) {
     begin,
     end,
 
+    siteheader, // TODO
+    sitefooter, // TODO
+
     attribute_begin,
     attribute_end,
 
@@ -89,6 +92,8 @@ pub const L1Kind = enum(u32) {
 
     abbreviation, // TODO! with custom trigger letter
 
+    math, // TODO with $
+
     // command section
     link = 0xFF000000,
     script,
@@ -97,6 +102,8 @@ pub const L1Kind = enum(u32) {
     relsize, // TODO!
     color, // TODO!
     img, // TODO size
+    div, // TODO!
+    span, // TODO!
     raw,
 
     pub fn is_command(self: @This()) bool {
