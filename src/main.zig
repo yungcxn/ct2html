@@ -84,13 +84,23 @@ pub fn main(init: std.process.Init) void {
         webserver.set_resp_body_constructor(&generate_response);
         webserver.run(std.heap.smp_allocator, io, cwd);
     } else {
-        const in_file = filex.open(io, cwd, args.in, ".ct") catch |err| {
+        if (!std.mem.eql(u8, args.in, "stdin") and !std.mem.endsWith(u8, args.in, ".ct")) {
+            std.log.err("Input file must have .ct extension", .{});
+            std.process.exit(1);
+        }
+
+        if (!std.mem.eql(u8, args.out, "stdout") and !std.mem.endsWith(u8, args.out, ".html")) {
+            std.log.err("Output file must have .html extension", .{});
+            std.process.exit(1);
+        }
+
+        const in_file = filex.open(io, cwd, args.in) catch |err| {
             std.log.err("Failed to open input file: {s}", .{@errorName(err)});
             std.process.exit(1);
         };
         errdefer filex.close(io, in_file); // closed in preprocessor
 
-        const out_file = filex.create(io, cwd, args.out, ".html") catch |err| {
+        const out_file = filex.create(io, cwd, args.out) catch |err| {
             std.log.err("Failed to open output file: {s}", .{@errorName(err)});
             std.process.exit(1);
         };
@@ -221,12 +231,15 @@ fn generate_response(
     cwd: std.Io.Dir,
     path: []const u8,
 ) error{FileNotFound}![]const u8 {
+    std.log.info("requested: {s}", .{path});
+    if (!std.mem.endsWith(u8, path, ".ct")) {
+        return error.FileNotFound;
+    }
+
     var path2 = path;
     if (path[0] == '/') path2 = path[1..]; // remove leading slash
 
-    std.log.info("requested: {s}", .{path2});
-
-    const in_file = filex.open(io, cwd, path2, ".ct") catch return error.FileNotFound;
+    const in_file = filex.open(io, cwd, path2) catch return error.FileNotFound;
 
     // run and build generator.outbuf, but on some user-induced error, throw
     // without exiting to fill the outbuf of the error reporter.

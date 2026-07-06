@@ -25,6 +25,10 @@ pub const def = [_]Rule.Gen{
     .def(.paragraph, .{ "<p>", "</p>" }),
     .def(.nonparagraph, .{ "", "" }),
 
+    .def(.code_block_header, .{ "<div class=\"code-header\">", "</div>" }),
+    .def(.code_block_meta, .{ "<pre><code class=\"language-", "\">" }),
+    .def(.code_block, .{ "", "</code></pre>" }),
+
     .def(.unordered_list_begin, "<ul>"),
     .def(.unordered_list_end, "</ul>"),
 

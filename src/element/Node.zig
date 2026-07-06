@@ -37,7 +37,10 @@ pub const L0Kind = enum(u32) {
     footnote, // TODO
     footnote_block, // TODO
 
-    code_block, // TODO, ``` with prism code class e.g. language-python in same name, otherwise err
+    // all code_block_* nodes get omitted besides _caption, which is not always present.
+    code_block_header,
+    code_block_meta,
+    code_block,
 
     quote_block, // TODO, > err otherwise
     bold_quote_block, // TODO, >> err otherwise

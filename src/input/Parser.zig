@@ -217,6 +217,11 @@ pub inline fn bounded_pop(self: *@This(), endat: usize) ?u8 {
     return self.text[self.cursor];
 }
 
+pub inline fn bounded_peek(self: *@This(), endat: usize) ?u8 {
+    if (!self.in_bound(endat) or !self.in_bound(self.text.len)) return null;
+    return self.text[self.cursor];
+}
+
 inline fn eq_any(c: u8, val: anytype) bool {
     if (@TypeOf(val) == u8 or @TypeOf(val) == comptime_int) return c == val;
 

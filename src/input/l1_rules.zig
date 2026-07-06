@@ -57,8 +57,8 @@ fn l1capture_rule(
                     // cursor is on trigger, and `chars_in_capture` includes '\\'
                     if (p.text[p.cursor - 1] == '\\') {
                         // escaped trigger, so we skip it and continue searching
-                        chars_in_capture += 1; // include capture
-                        p.cursor += 1; // skip the trigger
+                        chars_in_capture += 1;
+                        p.inc();
                         continue;
                     } else {
                         break;
@@ -127,8 +127,8 @@ fn command(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
         // cursor is on trigger, and `argcharc` includes '\\'
         if (p.text[p.cursor - 1] == '\\') {
             // escaped trigger, so we skip it and continue searching
-            argcharc += 1; // include capture
-            p.cursor += 1; // skip the trigger
+            argcharc += 1;
+            p.inc();
             continue;
         } else {
             break;

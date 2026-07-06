@@ -19,6 +19,7 @@ pub const def = [_]Rule.L0{
     .{ .triggers = &.{'?'}, .parse = &nonpar },
     .{ .triggers = &.{'\\'}, .parse = &par },
     .{ .triggers = &.{'#'}, .parse = &heading },
+    .{ .triggers = &.{'`'}, .parse = &code_block },
     .{
         .triggers = &.{'-'},
         .parse = &dash_items,
@@ -142,6 +143,92 @@ pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalS
     }
 
     p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat } });
+    return .success;
+}
+
+// since having inline code at the start of a par block is not uncommon, we just pass to a par
+// if we only have a single backtick and could look for the l1 inline code in the next parser stage
+pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
+    const at_start = p.cursor;
+    // cursor is assumed to be on the first backtick, begin counting
+    const backtick0_c = p.bounded_skipc('`', endat) catch {
+        return p.e.file_report(error.L0SyntaxError, true, "Nothing after first batch of backticks", null);
+    };
+
+    if (backtick0_c == 1) { // the fallback that was mentioned above
+        p.cursor = at_start;
+        _ = par(p, endat) catch |err| return err;
+        return .transitioned;
+    } else if (backtick0_c != 3) {
+        return p.e.file_report(error.L0SyntaxError, true, "Code block must start with 3 backticks", null);
+    }
+
+    const code_block0_at = p.cursor; // cursor is now on the first char after the 3 backticks
+    p.bounded_find('\n', endat) catch {
+        return p.e.file_report(error.L0SyntaxError, true, "Missing newline after code block meta line", null);
+    };
+
+    const code_block_meta_span: @Vector(2, usize) = .{ code_block0_at, p.cursor };
+
+    p.inc(); // skip the newline char
+
+    var code_blockc: usize = 0;
+    while (true) {
+        code_blockc += p.bounded_findc('`', endat) catch {
+            return p.e.file_report(error.L0SyntaxError, true, "Missing closing backticks for code block", null);
+        };
+        if (p.text[p.cursor - 1] == '\\') {
+            code_blockc += 1;
+            p.inc();
+            continue;
+        } else {
+            break;
+        }
+    }
+
+    const code_block_span: @Vector(2, usize) = .{ p.cursor - code_blockc, p.cursor };
+
+    // cursor at first of closing backticks, count them until endat
+    var backtick1_c: usize = 0;
+    while (p.bounded_peek(endat)) |c| {
+        if (c == '`') {
+            backtick1_c += 1;
+        } else {
+            break;
+        }
+        p.inc();
+    }
+
+    // there could be still text after the closing batch of backticks
+
+    if (backtick1_c != 3) {
+        return p.e.file_report(error.L0SyntaxError, true, "Code block must end with 3 backticks", null);
+    }
+    // cursor is on first char after the 3 last backticks, could be only whitespace... so skip
+    // if there was no text after the backticks in this block, just ignore it; we already exceeded
+    // the endat and won't produce anything.
+    p.bounded_skip_whitesp(endat) catch {};
+
+    if (p.cursor < endat) { // there is some text in the line of the last backticks, include all
+        p.l0nodes.push(.{
+            .kind = .code_block_header,
+            .span = .{ p.cursor, endat },
+            .contains_l1 = true,
+        });
+    }
+
+    p.l0nodes.push(.{
+        .kind = .code_block_meta,
+        .span = code_block_meta_span,
+        .contains_l1 = false,
+    });
+
+    p.l0nodes.push(.{
+        .kind = .code_block,
+        .span = code_block_span,
+        .contains_l1 = false,
+    });
+
     return .success;
 }
 
