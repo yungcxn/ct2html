@@ -7,12 +7,12 @@ const expectError = std.testing.expectError;
 fn test_for_file(filepath: []const u8) main.RunError!void {
     std.debug.print("Testing file: {s}\n", .{filepath});
 
-    const cwd = filex.safeopen_dir(std.testing.io, null, "test/") catch crash("cwd error");
-    defer filex.safeclose_dir(std.testing.io, cwd);
+    const cwd = filex.open_dir(std.testing.io, null, "test/") catch crash("cwd error");
+    defer filex.close_dir(std.testing.io, cwd);
 
-    const in_file = filex.safeopen(std.testing.io, cwd, filepath) catch crash("file open error");
+    const in_file = filex.open(std.testing.io, cwd, filepath) catch crash("file open error");
 
-    try main.run(std.testing.allocator, std.testing.io, false, cwd, in_file, std.Io.File.stdout(), false, false, false);
+    try main.run(std.heap.smp_allocator, std.testing.io, false, cwd, in_file, std.Io.File.stdout(), false, false, false);
 }
 
 test "normal file" {
