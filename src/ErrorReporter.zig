@@ -3,7 +3,7 @@ const Node = @import("element/Node.zig");
 const Parser = @import("input/Parser.zig");
 const DynBuf = @import("ds/dynbuf.zig").DynBuf;
 
-arenalloc: std.mem.Allocator,
+alloc: std.mem.Allocator,
 io: std.Io,
 err_reported: bool = false,
 outbuf: DynBuf(u8),
@@ -17,18 +17,13 @@ pub fn init(
     htmlmode: bool,
     responsemode: bool,
 ) @This() {
-    var newarena = std.heap.ArenaAllocator.init(alloc);
     return @This(){
-        .arenalloc = newarena.allocator(),
+        .alloc = alloc,
         .io = io,
-        .outbuf = DynBuf(u8).init(newarena.allocator(), 100),
+        .outbuf = DynBuf(u8).init(alloc, 100),
         .htmlmode = htmlmode,
         .responsemode = responsemode,
     };
-}
-
-pub fn deinit(self: *@This()) void {
-    self.arenalloc.deinit();
 }
 
 pub fn set_parser(self: *@This(), parser: *Parser) void {
@@ -84,14 +79,11 @@ pub fn file_report(
     const report = Report{
         .err_name = @errorName(err),
         .from_text = from_text,
-        .texthint = switch (@typeInfo(@TypeOf(texthint))) {
-            .@"struct" => std.fmt.allocPrint(
-                self.arenalloc,
-                texthint[0],
-                texthint[1],
-            ) catch return crash(error.OOM),
-            else => texthint,
-        },
+        .texthint = std.fmt.allocPrint(
+            self.alloc,
+            if (@typeInfo(@TypeOf(texthint)) == .@"struct") texthint[0] else "{s}",
+            if (@typeInfo(@TypeOf(texthint)) == .@"struct") texthint[1] else .{texthint},
+        ) catch return crash(error.OOM),
         .node_or_kind = switch (@typeInfo(@TypeOf(node_or_kind))) {
             .@"enum" => switch (@TypeOf(node_or_kind)) {
                 Node.L0Kind => .{ .l0kind = node_or_kind },
@@ -108,6 +100,8 @@ pub fn file_report(
     };
 
     self.build_report(report);
+    self.alloc.free(report.texthint.?); // due to `allocPrint` above
+
     return err;
 }
 
