@@ -42,8 +42,10 @@ pub const L0Kind = enum(u32) {
     code_block_meta,
     code_block,
 
-    quote_block, // TODO, > err otherwise
-    bold_quote_block, // TODO, >> err otherwise
+    quote_block,
+    bold_quote_block,
+    italic_quote_block,
+    bold_italic_quote_block,
 
     dash_item,
     dash_item_end,
@@ -95,7 +97,6 @@ pub const L1Kind = enum(u32) {
     relsize, // TODO!
     color, // TODO!
     img, // TODO size
-    import, // TODO!
     raw,
 
     pub fn is_command(self: @This()) bool {

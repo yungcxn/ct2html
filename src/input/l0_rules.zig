@@ -16,10 +16,11 @@ const crash = @import("../ErrorReporter.zig").crash;
 // .def TODO
 pub const def = [_]Rule.L0{
     .{ .parse = &par },
-    .{ .triggers = &.{'?'}, .parse = &nonpar },
+    .{ .triggers = &.{'?'}, .parse = &nonpar, .l1_rescan = false },
     .{ .triggers = &.{'\\'}, .parse = &par },
     .{ .triggers = &.{'#'}, .parse = &heading },
     .{ .triggers = &.{'`'}, .parse = &code_block },
+    .{ .triggers = &.{'>'}, .parse = &block_quote },
     .{
         .triggers = &.{'-'},
         .parse = &dash_items,
@@ -362,6 +363,25 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFina
             }
         }
     }
+    return .success;
+}
+
+pub fn block_quote(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
+    const quotec = p.skipc('>') catch {
+        return p.e.file_report(error.L0SyntaxError, true, "Nothing after block quote", Node.L0Kind.quote_block);
+    };
+
+    const kind: Node.L0Kind = switch (quotec) {
+        1 => .quote_block,
+        2 => .bold_quote_block,
+        3 => .italic_quote_block,
+        4 => .bold_italic_quote_block,
+        else => {
+            return p.e.file_report(error.L0SyntaxError, true, "Too many block quote chars", Node.L0Kind.quote_block);
+        },
+    };
+
+    p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat } });
     return .success;
 }
 

@@ -8,8 +8,22 @@ Here is some *bold-containing* text, and some **italic-containing** txt.
 and **multi-line-
 --italic**.
 
+*{ Der Allerbarmer hat sich über den Thron erhoben }* [20:5]
+
 How about some _strikethrough_ text, and some __strikethrough-bold__ text?
 and some ___strikethrough-italic___ text, and some ____strikethough-bold-italic____ text?
+
+> cool quote
+
+and some text
+
+>> a bold quote...
+
+some text
+
+>>> a italic quote
+
+>>> a bold and italic quote
 
 And again some ***both***.
 

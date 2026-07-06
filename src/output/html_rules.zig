@@ -22,6 +22,11 @@ pub const def = [_]Rule.Gen{
     .def(.heading5, .{ "<h5>", "</h5>" }),
     .def(.heading6, .{ "<h6>", "</h6>" }),
 
+    .def(.quote_block, .{ "<blockquote>", "</blockquote>" }),
+    .def(.bold_quote_block, .{ "<blockquote><strong>", "</strong></blockquote>" }),
+    .def(.italic_quote_block, .{ "<blockquote><em>", "</em></blockquote>" }),
+    .def(.bold_italic_quote_block, .{ "<blockquote><em><strong>", "</strong></em></blockquote>" }),
+
     .def(.paragraph, .{ "<p>", "</p>" }),
     .def(.nonparagraph, .{ "", "" }),
 
