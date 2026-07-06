@@ -109,7 +109,7 @@ fn walk_and_merge(
         dynbuf.append(pre_at_span);
 
         const newfile_path: []const u8 = arg_span;
-        const newfile = filex.open(io, cwd, newfile_path) catch |err| {
+        const newfile = filex.open(io, cwd, newfile_path, ".ct") catch |err| {
             return e.file_report(err, false, .{ "Failed to open import file: {s}", .{newfile_path} }, null);
         };
 

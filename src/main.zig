@@ -84,13 +84,13 @@ pub fn main(init: std.process.Init) void {
         webserver.set_resp_body_constructor(&generate_response);
         webserver.run(std.heap.smp_allocator, io, cwd);
     } else {
-        const in_file = filex.open(io, cwd, args.in) catch |err| {
+        const in_file = filex.open(io, cwd, args.in, ".ct") catch |err| {
             std.log.err("Failed to open input file: {s}", .{@errorName(err)});
             std.process.exit(1);
         };
         errdefer filex.close(io, in_file); // closed in preprocessor
 
-        const out_file = filex.open(io, cwd, args.out) catch |err| {
+        const out_file = filex.create(io, cwd, args.out, ".html") catch |err| {
             std.log.err("Failed to open output file: {s}", .{@errorName(err)});
             std.process.exit(1);
         };
@@ -226,7 +226,7 @@ fn generate_response(
 
     std.log.info("requested: {s}", .{path2});
 
-    const in_file = filex.open(io, cwd, path2) catch return error.FileNotFound;
+    const in_file = filex.open(io, cwd, path2, ".ct") catch return error.FileNotFound;
 
     // run and build generator.outbuf, but on some user-induced error, throw
     // without exiting to fill the outbuf of the error reporter.

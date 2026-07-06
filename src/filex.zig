@@ -32,7 +32,23 @@ pub fn open_dir(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io
     };
 }
 
-pub fn open(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.File {
+pub fn create(io: std.Io, cwd: ?std.Io.Dir, path: []const u8, allowed_fileending: []const u8) FileError!std.Io.File {
+    // this is important for security reasons
+    if (!std.mem.endsWith(u8, path, allowed_fileending)) {
+        return FileError.InvalidFileExtension;
+    }
+
+    var dir: std.Io.Dir = undefined;
+    if (cwd) |non_default_cwd| {
+        dir = non_default_cwd;
+    } else {
+        dir = std.Io.Dir.cwd();
+    }
+
+    return dir.createFile(io, path, .{}) catch |err| crash(err);
+}
+
+pub fn open(io: std.Io, cwd: ?std.Io.Dir, path: []const u8, allowed_fileending: []const u8) FileError!std.Io.File {
     if (std.mem.eql(u8, path, "stdin")) {
         return std.Io.File.stdin();
     } else if (std.mem.eql(u8, path, "stdout")) {
@@ -40,7 +56,7 @@ pub fn open(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.Fil
     }
 
     // this is important for security reasons
-    if (!std.mem.endsWith(u8, path, ".ct")) {
+    if (!std.mem.endsWith(u8, path, allowed_fileending)) {
         return FileError.InvalidFileExtension;
     }
 
