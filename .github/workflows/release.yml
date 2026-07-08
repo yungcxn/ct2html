@@ -1,15 +1,11 @@
 name: Build and Release
-
 on:
   push:
     branches: [main]
-
 permissions:
   contents: write
-
 env:
   ZIG_VERSION: 0.17.0-dev.387+31f157d80
-
 jobs:
   prepare:
     if: startsWith(github.event.head_commit.message, 'chore(release):')
@@ -52,3 +48,39 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.ts }}
           name: ${{ needs.prepare.outputs.ts }}
           files: ct2html-linux-x86_64-${{ matrix.optimize }}
+
+  trigger-deploy:
+    needs: release
+    if: needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger site-deploy workflow
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DEPLOY_TRIGGER_TOKEN }}
+          WORKFLOW_FILE: ${{ secrets.SITE_DEPLOY_YAML }}
+          TARGET_REPO: ${{ secrets.SITE_DEPLOY_REPO }}
+        run: |
+          gh workflow run "$WORKFLOW_FILE" --repo "$TARGET_REPO"
+
+      - name: Find the triggered run
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DEPLOY_TRIGGER_TOKEN }}
+          WORKFLOW_FILE: ${{ secrets.SITE_DEPLOY_YAML }}
+          TARGET_REPO: ${{ secrets.SITE_DEPLOY_REPO }}
+        run: |
+          sleep 5
+          RUN_ID=$(gh run list \
+            --repo "$TARGET_REPO" \
+            --workflow="$WORKFLOW_FILE" \
+            --event=workflow_dispatch \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+
+      - name: Wait and fail if it fails
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DEPLOY_TRIGGER_TOKEN }}
+          TARGET_REPO: ${{ secrets.SITE_DEPLOY_REPO }}
+        run: |
+          gh run watch "$RUN_ID" --repo "$TARGET_REPO" --exit-status
