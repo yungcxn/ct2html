@@ -10,36 +10,18 @@ const L0SyntaxError = Parser.ParsingError.L0SyntaxError;
 const file_report = @import("../ErrorReporter.zig").file_report;
 const crash = @import("../ErrorReporter.zig").crash;
 
-// TODO better, real VTABLE type to write, define nice enum(int) vtable type
 // every func that is here registered may leave cursor anywhere
 
-// .def TODO
 pub const def = [_]Rule.L0{
-    .{ .parse = &par },
-    .{ .triggers = &.{'?'}, .parse = &nonpar, .l1_rescan = false },
-    .{ .triggers = &.{'\\'}, .parse = &par },
-    .{ .triggers = &.{'#'}, .parse = &heading },
-    .{ .triggers = &.{'`'}, .parse = &code_block },
-    .{ .triggers = &.{'>'}, .parse = &block_quote },
-    .{
-        .triggers = &.{'-'},
-        .parse = &dash_items,
-        .pre_node = .unordered_list_begin,
-        .post_node = .unordered_list_end,
-    },
-    .{
-        .triggers = &.{ '1', '2', '3', '4', '5', '6', '7', '8', '9' },
-        .parse = &num_items,
-        .pre_node = .ordered_list_begin,
-        .post_node = .ordered_list_end,
-    },
-    .{
-        .triggers = &.{'!'},
-        .parse = &attributes,
-        .pre_node = .attribute_begin,
-        .post_node = .attribute_end,
-        .l1_rescan = false,
-    },
+    .def(null, par, null, null, true),
+    .def('\\', par, null, null, true),
+    .def('?', nonpar, null, null, false),
+    .def('#', heading, null, null, true),
+    .def('`', code_block, null, null, true),
+    .def('>', block_quote, null, null, true),
+    .def('-', dash_items, .unordered_list_begin, .unordered_list_end, true),
+    .def(.{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, &num_items, .ordered_list_begin, .ordered_list_end, true),
+    .def('!', attributes, .attribute_begin, .attribute_end, false),
 };
 
 pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {

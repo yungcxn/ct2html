@@ -6,9 +6,9 @@ const hack = @import("../hack.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 
 pub const L0 = struct {
-    triggers: []const u8 = &.{}, // null: e.g. paragraph
+    triggers: ?[]const u8 = null, // null: e.g. paragraph
     // may parse multiple nodes, due to structuring l0 blocks
-    parse: *const fn (*Parser, usize) Parser.ParsingError!ApplyFinalState,
+    parse: fn (*Parser, usize) Parser.ParsingError!ApplyFinalState,
     pre_node: ?Node.L0Kind = null,
     post_node: ?Node.L0Kind = null,
     l1_rescan: bool = true, // could l1 rules be applied in this block?
@@ -26,7 +26,15 @@ pub const L0 = struct {
         return false;
     }
 
-    // TODO def
+    pub fn def(comptime triggers: anytype, comptime parse: anytype, comptime pre_node: ?Node.L0Kind, comptime post_node: ?Node.L0Kind, comptime l1_rescan: bool) L0 {
+        return L0{
+            .triggers = if (@TypeOf(triggers) == @TypeOf(null)) null else hack.force_tup(triggers),
+            .parse = parse,
+            .pre_node = pre_node,
+            .post_node = post_node,
+            .l1_rescan = l1_rescan,
+        };
+    }
 };
 
 // in-block rules, really simple, e.g. bold text
