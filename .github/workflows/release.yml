@@ -46,9 +46,9 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
       - run: zig build -Doptimize=${{ matrix.optimize }} -Dtarget=x86_64-linux-gnu -Dcpu=baseline
-      - run: tar -czf ct2html-${{ matrix.optimize }}.tar.gz ct2html
+      - run: mv ct2html ct2html-linux-x86_64-${{ matrix.optimize }}
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.ts }}
           name: ${{ needs.prepare.outputs.ts }}
-          files: ct2html-${{ matrix.optimize }}.tar.gz
+          files: ct2html-linux-x86_64-${{ matrix.optimize }}
