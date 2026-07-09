@@ -5,6 +5,7 @@ const Node = @import("../element/Node.zig");
 const Parser = @import("Parser.zig");
 const Rule = @import("../element/Rule.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
+const hack = @import("../hack.zig");
 
 const L0SyntaxError = Parser.ParsingError.L0SyntaxError;
 const file_report = @import("../ErrorReporter.zig").file_report;
@@ -12,15 +13,15 @@ const crash = @import("../ErrorReporter.zig").crash;
 
 // every func that is here registered may leave cursor anywhere
 
-pub const def = [_]Rule.L0{
-    .def(null, par, null, null, true),
+pub const rule_defs = [_]Rule.L0Def{
+    .def(0, par, null, null, true),
     .def('\\', par, null, null, true),
     .def('?', nonpar, null, null, false),
     .def('#', heading, null, null, true),
     .def('`', code_block, null, null, true),
     .def('>', block_quote, null, null, true),
     .def('-', dash_items, .unordered_list_begin, .unordered_list_end, true),
-    .def(.{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, &num_items, .ordered_list_begin, .ordered_list_end, true),
+    .def(.{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, num_items, .ordered_list_begin, .ordered_list_end, true),
     .def('!', attributes, .attribute_begin, .attribute_end, false),
 };
 

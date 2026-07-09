@@ -1,11 +1,9 @@
 const std = @import("std");
 const Node = @import("../element/Node.zig");
-const html_rules = @import("html_rules.zig");
 const Rule = @import("../element/Rule.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 
-// TODO \_ how to solve that issue?
 // TODO: caching by saving outfile at /tmp/ct2html/datetimenanoseconds.html (faster than hash)
 // TODO: print special non ascii chars correctly...
 
@@ -25,6 +23,8 @@ textin: []const u8, // borrowed from parser
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
+html_gen_rule_datatable: Rule.DataTable(Rule.GenDef.RuleInfo),
+
 outbuf: DynBuf(u8),
 
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
@@ -37,6 +37,7 @@ pub fn init(
     textin: []const u8,
     l0nodes: DynBuf(Node.L0),
     l1nodes: DynBuf(Node.L1),
+    html_gen_rule_datatable: Rule.DataTable(Rule.GenDef.RuleInfo),
     htmlerror: bool,
     responsemode: bool,
 ) @This() {
@@ -46,6 +47,7 @@ pub fn init(
         .textin = textin,
         .l0nodes = l0nodes,
         .l1nodes = l1nodes,
+        .html_gen_rule_datatable = html_gen_rule_datatable,
         .htmlerror = htmlerror,
         .responsemode = responsemode,
         .outbuf = DynBuf(u8).init(alloc, textin.len * 2),

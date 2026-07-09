@@ -3,6 +3,10 @@ const filex = @import("filex.zig");
 const argx = @import("argx.zig");
 const Preprocessor = @import("input/Preprocessor.zig");
 const Parser = @import("input/Parser.zig");
+const Rule = @import("element/Rule.zig");
+const l0_rules = @import("input/l0_rules.zig");
+const l1_rules = @import("input/l1_rules.zig");
+const html_rules = @import("output/html_rules.zig");
 const Generator = @import("output/Generator.zig");
 const ErrorReporter = @import("ErrorReporter.zig");
 const crash = ErrorReporter.crash;
@@ -60,17 +64,17 @@ pub const argdef = .{
 
 pub fn main(init: std.process.Init) void {
     const io = init.io;
-    const manualloc = init.gpa;
-    var arena = std.heap.ArenaAllocator.init(manualloc);
-    defer arena.deinit();
+    const alloc = init.gpa;
 
     const argslice = init.minimal.args.toSlice(
-        arena.allocator(),
+        alloc,
     ) catch |err| ErrorReporter.crash(err);
+    defer alloc.free(argslice);
 
     const env_vars = init.minimal.environ.createMap(
-        arena.allocator(),
+        alloc,
     ) catch |err| ErrorReporter.crash(err);
+    defer env_vars.deinit();
 
     const args = argx.parse(argdef, argslice, env_vars);
 
@@ -79,6 +83,13 @@ pub fn main(init: std.process.Init) void {
         std.process.exit(1);
     };
     defer filex.close_dir(io, cwd);
+
+    const l0_rule_datatable: Rule.DataTable(Rule.L0Def.RuleInfo) = .init(alloc, l0_rules.rule_defs);
+    defer l0_rule_datatable.deinit(alloc);
+    const l1_rule_datatable: Rule.DataTable(Rule.L1Def.RuleInfo) = .init(alloc, l1_rules.rule_defs);
+    defer l1_rule_datatable.deinit(alloc);
+    const html_gen_rule_datatable: Rule.DataTable(Rule.GenDef.RuleInfo) = .init(alloc, html_rules.rule_defs);
+    defer html_gen_rule_datatable.deinit(alloc);
 
     if (args.webservermode) {
         webserver.set_resp_body_constructor(&generate_response);
@@ -107,7 +118,7 @@ pub fn main(init: std.process.Init) void {
         defer filex.close(io, out_file);
 
         run(
-            arena.allocator(),
+            alloc,
             io,
             false,
             cwd,
@@ -127,6 +138,9 @@ pub fn run(
     cwd: std.Io.Dir,
     in_file: std.Io.File,
     out_file: ?std.Io.File,
+    l0_rule_datatable: Rule.DataTable(Rule.L0Def.RuleInfo),
+    l1_rule_datatable: Rule.DataTable(Rule.L1Def.RuleInfo),
+    html_gen_rule_datatable: Rule.DataTable(Rule.GenDef.RuleInfo),
     htmlerror: bool,
     responsemode: bool,
     debug: bool,
@@ -164,6 +178,8 @@ pub fn run(
         io,
         &error_reporter,
         preprocessed_text,
+        l0_rule_datatable,
+        l1_rule_datatable,
         htmlerror,
     );
     defer parser.deinit();
@@ -194,6 +210,7 @@ pub fn run(
         preprocessed_text,
         parser.l0nodes,
         parser.l1nodes,
+        html_gen_rule_datatable,
         htmlerror,
         responsemode,
     );

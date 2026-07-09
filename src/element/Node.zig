@@ -39,6 +39,7 @@ pub const L0Kind = enum(u32) {
 
     footnote, // TODO
     footnote_block, // TODO
+    sidenote, // TODO
 
     // all code_block_* nodes get omitted besides _caption, which is not always present.
     code_block_header,
@@ -66,19 +67,19 @@ pub const L0Kind = enum(u32) {
     num_paren_item_text,
 
     // attribute section
-    style = 0xFF000000,
+    style = 0x0000FF00,
     script,
     header,
     abbreviation_def, // TODO!
     raw,
 
     pub fn is_attribute(self: @This()) bool {
-        return @intFromEnum(self) & 0xFF000000 == 0xFF000000;
+        return @intFromEnum(self) & 0x0000FF00 == 0x0000FF00;
     }
 };
 
 pub const L1Kind = enum(u32) {
-    inline_code,
+    inline_code = 0x00FF0000,
     bold,
     strikethrough,
 

@@ -2,11 +2,9 @@ const std = @import("std");
 const Node = @import("../element/Node.zig");
 const Parser = @This();
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
+const Rule = @import("../element/Rule.zig");
 
 const ErrorReporter = @import("../ErrorReporter.zig");
-
-const l0_rules = @import("l0_rules.zig");
-const l1_rules = @import("l1_rules.zig");
 
 pub const ParsingError = error{
     L0SyntaxError,
@@ -24,6 +22,9 @@ cursor: usize, // TODO we should provide a second cursor that replaces endat..
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
+l0_rule_datatable: Rule.DataTable(Rule.L0Def.RuleInfo),
+l1_rule_datatable: Rule.DataTable(Rule.L1Def.RuleInfo),
+
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 
 pub fn init(
@@ -31,6 +32,8 @@ pub fn init(
     io: std.Io,
     e: *ErrorReporter,
     text: []const u8,
+    l0_rule_datatable: Rule.DataTable(Rule.L0Def.RuleInfo),
+    l1_rule_datatable: Rule.DataTable(Rule.L1Def.RuleInfo),
     htmlerror: bool,
 ) @This() {
     return .{
@@ -39,6 +42,8 @@ pub fn init(
         .cursor = 0,
         .l0nodes = .init(alloc, 4096),
         .l1nodes = .init(alloc, 4096),
+        .l0_rule_datatable = l0_rule_datatable,
+        .l1_rule_datatable = l1_rule_datatable,
         .e = e,
         .htmlerror = htmlerror,
     };
@@ -88,29 +93,26 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
 
     // cursor is at the first char of the block
 
-    var l0_rule = l0_rules.def[0]; // default rule, should be a paragraph
-    inline for (l0_rules.def) |rule| {
-        if (rule.in_triggers(l0_capture_c)) l0_rule = rule;
-    }
+    const l0_ri = self.l0_rule_datatable.lookup(l0_capture_c);
 
-    if (l0_rule.pre_node) |kind| self.l0nodes.push(
+    if (l0_ri.pre_node) |kind| self.l0nodes.push(
         .{ .kind = kind, .span = null, .contains_l1 = false },
     );
 
-    const l0_apply_state = try l0_rule.parse(self, blockend);
+    const l0_apply_state = try l0_ri.parse(self, blockend);
 
     switch (l0_apply_state) {
         .transitioned => {
             // we pushed to head-1 the p node, and not yet l1 nodes
             // so if we had a l0_begin pushed node, we must replace it
             // by the p node and reset cursor by -1
-            if (l0_rule.pre_node) |_| {
+            if (l0_ri.pre_node) |_| {
                 const last_pnode = self.l0nodes.buf[self.l0nodes.head - 1];
                 self.l0nodes.buf[self.l0nodes.head - 2] = last_pnode;
                 self.l0nodes.head -= 1;
             }
         },
-        .success => if (l0_rule.post_node) |kind| {
+        .success => if (l0_ri.post_node) |kind| {
             self.l0nodes.push(
                 .{ .kind = kind, .span = null, .contains_l1 = false },
             );
@@ -129,20 +131,18 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void
             _ = self.bounded_pop(node_end); // skip escaped char
             continue;
         }
-        inline for (l1_rules.def) |rule| {
-            if (rule.in_triggers(c)) {
-                const l1node = try rule.parse_node(self, node_end);
 
-                if (l1node) |node| {
-                    self.l1nodes.push(node);
+        const l1_ri = self.l1_rule_datatable.lookup(c);
+        const l1node = try l1_ri.parse_node(self, node_end);
 
-                    if (l0node.l1child0 == null) {
-                        l0node.l1child0 = self.l1nodes.head - 1;
-                        l0node.l1childhead = l0node.l1child0.? + 1;
-                    } else {
-                        l0node.l1childhead = l0node.l1childhead.? + 1;
-                    }
-                }
+        if (l1node) |node| {
+            self.l1nodes.push(node);
+
+            if (l0node.l1child0 == null) {
+                l0node.l1child0 = self.l1nodes.head - 1;
+                l0node.l1childhead = l0node.l1child0.? + 1;
+            } else {
+                l0node.l1childhead = l0node.l1childhead.? + 1;
             }
         }
     }
