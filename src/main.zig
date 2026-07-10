@@ -147,10 +147,10 @@ pub fn main(init: std.process.Init) void {
             }
         }
 
-        const outbuf = run(alloc, io, cwd, in_file, args.htmlerror, args.responsemode, args.debug)[0];
+        const outbuf, const run_err = run(alloc, io, cwd, in_file, args.htmlerror, args.responsemode, args.debug);
         defer alloc.free(outbuf);
 
-        if (in_file.handle != std.Io.File.stdin().handle) {
+        if (run_err == null and in_file.handle != std.Io.File.stdin().handle) {
             cache.force_store(outbuf, args.in);
             std.log.info("Stored cache for: {s}", .{args.in});
         }
@@ -255,9 +255,11 @@ fn alloc_response(
         std.log.info("Cache hit for: {s}", .{path2});
         return buf;
     } else {
-        const out = run(alloc, io, cwd, in_file, true, false, false)[0];
-        cache.force_store(out, path2);
-        std.log.info("Stored cache for: {s}", .{path2});
+        const out, const run_err = run(alloc, io, cwd, in_file, true, false, false);
+        if (run_err == null) {
+            cache.force_store(out, path2);
+            std.log.info("Stored cache for: {s}", .{path2});
+        }
         return out;
     }
 }

@@ -109,6 +109,12 @@ pub fn open_dir(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io
 }
 
 pub fn create(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.File {
+    if (std.mem.eql(u8, path, "stdin")) {
+        return std.Io.File.stdin();
+    } else if (std.mem.eql(u8, path, "stdout")) {
+        return std.Io.File.stdout();
+    }
+
     var dir: std.Io.Dir = undefined;
     if (cwd) |non_default_cwd| {
         dir = non_default_cwd;
