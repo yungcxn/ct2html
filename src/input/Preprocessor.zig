@@ -18,7 +18,7 @@ pub fn preprocess(
     cwd: std.Io.Dir,
     file0: std.Io.File,
 ) FileWalkError![]const u8 {
-    var fbytes: []u8 = undefined;
+    var fbytes: []u8 = undefined; // gets always free'd in `walk_and_merge`
     // `fbytes` is the `file0` buffer, which is freed in `walk_and_merge`
     if (file0.handle == std.Io.File.stdin().handle) {
         fbytes = filex.alloc_stdin_bytes(alloc, io, file0);
@@ -26,6 +26,7 @@ pub fn preprocess(
         fbytes = filex.alloc_file_bytes(alloc, io, file0);
     }
     var dynbuf = DynBuf(u8).init(alloc, fbytes.len * 2);
+    errdefer dynbuf.deinit();
 
     try walk_and_merge(alloc, io, e, &dynbuf, cwd, file0, fbytes);
 
@@ -33,7 +34,7 @@ pub fn preprocess(
 
     // we could postpone, but no need to keep all files twice in memory
     // since the reader ops copy the file contents in `dynbuf`
-    return dynbuf.to_slice();
+    return dynbuf.to_owned_slice();
 }
 
 pub const FileWalkError = error{
@@ -124,7 +125,7 @@ fn walk_and_merge(
 
         // if newfile is in stack, we build a cycle, throw error
         // unwrapped since we currently peek into `file_stack` which guarantees atleast one elem
-        for (file_stack.to_slice().?) |file| {
+        for (file_stack.slice_view().?) |file| {
             if (file.handle != std.Io.File.stdin().handle) {
                 const stat_a = newfile.stat(io) catch |err| return crash(err);
                 const stat_b = file.stat(io) catch |err| return crash(err);

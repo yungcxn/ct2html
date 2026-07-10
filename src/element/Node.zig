@@ -1,4 +1,5 @@
 const std = @import("std");
+const hack = @import("../hack.zig");
 
 pub const L0 = struct {
     kind: L0Kind,
@@ -17,9 +18,8 @@ pub const L1 = struct {
     margin: @Vector(2, usize) = .{ 0, 0 },
 };
 
-pub const L0Kind = enum(u32) {
+pub const L0Kind = enum(u8) {
     begin,
-    end,
 
     siteheader, // TODO
     sitefooter, // TODO
@@ -67,19 +67,17 @@ pub const L0Kind = enum(u32) {
     num_paren_item_text,
 
     // attribute section
-    style = 0x0000FF00,
+    style,
     script,
     header,
     abbreviation_def, // TODO!
     raw,
 
-    pub fn is_attribute(self: @This()) bool {
-        return @intFromEnum(self) & 0x0000FF00 == 0x0000FF00;
-    }
+    end,
 };
 
-pub const L1Kind = enum(u32) {
-    inline_code = 0x00FF0000,
+pub const L1Kind = enum(u8) {
+    inline_code = @intFromEnum(L0Kind.end) + 1,
     bold,
     strikethrough,
 
@@ -96,7 +94,7 @@ pub const L1Kind = enum(u32) {
     math, // TODO with $
 
     // command section
-    link = 0xFF000000,
+    link,
     script,
     big, // TODO!
     small, // TODO!
@@ -106,8 +104,4 @@ pub const L1Kind = enum(u32) {
     div, // TODO!
     span, // TODO!
     raw,
-
-    pub fn is_command(self: @This()) bool {
-        return @intFromEnum(self) & 0xFF000000 == 0xFF000000;
-    }
 };

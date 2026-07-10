@@ -3,6 +3,7 @@ const Node = @import("../element/Node.zig");
 const Rule = @import("../element/Rule.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
+const html_rules = @import("html_rules.zig");
 
 // TODO: caching by saving outfile at /tmp/ct2html/datetimenanoseconds.html (faster than hash)
 // TODO: print special non ascii chars correctly...
@@ -23,8 +24,6 @@ textin: []const u8, // borrowed from parser
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
-html_gen_rule_datatable: Rule.DataTable(Rule.GenDef.RuleInfo),
-
 outbuf: DynBuf(u8),
 
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
@@ -37,7 +36,6 @@ pub fn init(
     textin: []const u8,
     l0nodes: DynBuf(Node.L0),
     l1nodes: DynBuf(Node.L1),
-    html_gen_rule_datatable: Rule.DataTable(Rule.GenDef.RuleInfo),
     htmlerror: bool,
     responsemode: bool,
 ) @This() {
@@ -47,7 +45,6 @@ pub fn init(
         .textin = textin,
         .l0nodes = l0nodes,
         .l1nodes = l1nodes,
-        .html_gen_rule_datatable = html_gen_rule_datatable,
         .htmlerror = htmlerror,
         .responsemode = responsemode,
         .outbuf = DynBuf(u8).init(alloc, textin.len * 2),
@@ -65,26 +62,17 @@ pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void 
 // TODO beautify out by indenting
 // TODO io_uring?
 pub fn generate_out(self: *@This()) GenError![]const u8 {
+    errdefer self.outbuf.deinit();
     if (self.responsemode) {
         self.outbuf.append("Content-Type: text/html; charset=UTF-8\r\n\r\n");
     }
 
-    for (self.l0nodes.to_slice()) |l0node| {
-        var l0rule: ?Rule.Gen = null;
-        for (html_rules.def) |r| {
-            if (std.meta.activeTag(r.kind) != .l0) continue;
+    for (self.l0nodes.slice_view()) |l0node| {
+        const l0_ri = html_rules.datatable.lookup(
+            @intFromEnum(l0node.kind),
+        ) orelse return ErrorReporter.crash(GenError.L0NodeNotFound);
 
-            if (r.kind.l0 == l0node.kind) {
-                l0rule = r;
-                break;
-            }
-        }
-
-        if (l0rule == null) {
-            return ErrorReporter.crash(GenError.UnnecessaryNodePresented);
-        }
-
-        const l0pretext = switch (l0rule.?.algo) {
+        const l0pretext = switch (l0_ri.algo) {
             .prepost => |pair| pair.pre,
             .text => |text| text,
             else => @panic("Replace-Rule not supported for L0"),
@@ -92,7 +80,7 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         self.print(l0pretext);
 
         defer {
-            const l0posttext = switch (l0rule.?.algo) {
+            const l0posttext = switch (l0_ri.algo) {
                 .prepost => |pair| pair.post,
                 .text => "", // no post text for single text l0 rule
                 else => @panic("Replace-Rule not supported for L0"),
@@ -116,21 +104,14 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         // post text and continue to the next l0
         if (l0node.l1childhead == null or l0node.l1child0 == null) continue;
 
-        for (self.l1nodes.to_slice()[l0node.l1child0.?..l0node.l1childhead.?]) |l1node| {
+        for (self.l1nodes.slice_view()[l0node.l1child0.?..l0node.l1childhead.?]) |l1node| {
             self.print_span(toprint0, l1node.span[0] - l1node.margin[0]);
 
-            var l1rule: ?Rule.Gen = null;
-            for (html_rules.def) |r| {
-                if (std.meta.activeTag(r.kind) != .l1) continue;
+            const l1_ri = html_rules.datatable.lookup(
+                @intFromEnum(l1node.kind),
+            ) orelse return ErrorReporter.crash(GenError.NoL1RuleForKind);
 
-                if (r.kind.l1 == l1node.kind) {
-                    l1rule = r;
-                    break;
-                }
-            }
-            if (l1rule == null) return ErrorReporter.crash(GenError.NoL1RuleForKind);
-
-            switch (l1rule.?.algo) {
+            switch (l1_ri.algo) {
                 .text => |text| {
                     self.print(text);
                 },
@@ -148,5 +129,5 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         }
     }
 
-    return self.outbuf.to_slice();
+    return self.outbuf.to_owned_slice();
 }

@@ -88,7 +88,7 @@ pub fn alloc_stdin_bytes(
         if (n < reader_buf.len) break; // short read = EOF / CTRL-D
     }
 
-    return dynbuf.to_slice();
+    return dynbuf.to_owned_slice();
 }
 
 pub fn alloc_file_bytes(

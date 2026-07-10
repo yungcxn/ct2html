@@ -86,13 +86,10 @@ fn handle_req(
         return;
     }
 
-    var newarena = std.heap.ArenaAllocator.init(alloc);
-    defer newarena.deinit();
-
     const path = req.head.target;
     const rbc = resp_body_constructor orelse crash(error.RespBodyConstructorNotSet);
     const response_body = rbc(
-        newarena.allocator(),
+        alloc,
         io,
         cwd,
         path,
@@ -105,6 +102,7 @@ fn handle_req(
             return;
         },
     };
+    defer alloc.free(response_body);
 
     try req.respond(response_body, .{ .status = .ok, .extra_headers = &headers });
 }

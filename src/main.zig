@@ -71,7 +71,7 @@ pub fn main(init: std.process.Init) void {
     ) catch |err| ErrorReporter.crash(err);
     defer alloc.free(argslice);
 
-    const env_vars = init.minimal.environ.createMap(
+    var env_vars = init.minimal.environ.createMap(
         alloc,
     ) catch |err| ErrorReporter.crash(err);
     defer env_vars.deinit();
@@ -84,16 +84,9 @@ pub fn main(init: std.process.Init) void {
     };
     defer filex.close_dir(io, cwd);
 
-    const l0_rule_datatable: Rule.DataTable(Rule.L0Def.RuleInfo) = .init(alloc, l0_rules.rule_defs);
-    defer l0_rule_datatable.deinit(alloc);
-    const l1_rule_datatable: Rule.DataTable(Rule.L1Def.RuleInfo) = .init(alloc, l1_rules.rule_defs);
-    defer l1_rule_datatable.deinit(alloc);
-    const html_gen_rule_datatable: Rule.DataTable(Rule.GenDef.RuleInfo) = .init(alloc, html_rules.rule_defs);
-    defer html_gen_rule_datatable.deinit(alloc);
-
     if (args.webservermode) {
         webserver.set_resp_body_constructor(&generate_response);
-        webserver.run(std.heap.smp_allocator, io, cwd);
+        webserver.run(alloc, io, cwd);
     } else {
         if (!std.mem.eql(u8, args.in, "stdin") and !std.mem.endsWith(u8, args.in, ".ct")) {
             std.log.err("Input file must have .ct extension", .{});
@@ -117,35 +110,33 @@ pub fn main(init: std.process.Init) void {
         };
         defer filex.close(io, out_file);
 
-        run(
+        const outbuf: []const u8 = run(
             alloc,
             io,
-            false,
             cwd,
             in_file,
-            out_file,
             args.htmlerror,
             args.responsemode,
             args.debug,
-        ) catch {}; // error is printed into the output file
+        )[0];
+        defer alloc.free(outbuf);
+
+        out_file.writeStreamingAll(io, outbuf) catch return crash(error.OOM);
     }
 }
 
+// the error is returned optionally for testing purposes.
 pub fn run(
     alloc: std.mem.Allocator,
     io: std.Io,
-    comptime pass_buf: bool,
     cwd: std.Io.Dir,
     in_file: std.Io.File,
-    out_file: ?std.Io.File,
-    l0_rule_datatable: Rule.DataTable(Rule.L0Def.RuleInfo),
-    l1_rule_datatable: Rule.DataTable(Rule.L1Def.RuleInfo),
-    html_gen_rule_datatable: Rule.DataTable(Rule.GenDef.RuleInfo),
     htmlerror: bool,
     responsemode: bool,
     debug: bool,
-) if (pass_buf) []const u8 else RunError!void {
+) struct { []const u8, ?RunError } {
     var error_reporter = ErrorReporter.init(alloc, io, htmlerror, responsemode);
+    defer error_reporter.deinit();
 
     // this allocates the preprocessed text []const u8
     const preprocessed_text: []const u8 = Preprocessor.preprocess(
@@ -154,18 +145,12 @@ pub fn run(
         &error_reporter,
         cwd,
         in_file,
-    ) catch |filewalkerr| {
+    ) catch |err| {
         if (error_reporter.err_reported) {
-            if (comptime pass_buf) {
-                return error_reporter.outbuf.to_slice();
-            } else {
-                out_file.?.writeStreamingAll(
-                    io,
-                    error_reporter.outbuf.to_slice(),
-                ) catch |err| crash(err);
-                return filewalkerr;
-            }
-        } else crash(error.ThrowWithoutReport);
+            return .{ error_reporter.outbuf.to_owned_slice(), err };
+        } else {
+            crash(error.ThrowWithoutReport);
+        }
     };
     defer alloc.free(preprocessed_text);
 
@@ -178,26 +163,16 @@ pub fn run(
         io,
         &error_reporter,
         preprocessed_text,
-        l0_rule_datatable,
-        l1_rule_datatable,
         htmlerror,
     );
     defer parser.deinit();
 
     error_reporter.set_parser(&parser);
 
-    parser.build_nodes() catch |parserr| {
-        if (error_reporter.err_reported) {
-            if (comptime pass_buf) {
-                return error_reporter.outbuf.to_slice();
-            } else {
-                out_file.?.writeStreamingAll(
-                    io,
-                    error_reporter.outbuf.to_slice(),
-                ) catch |err| crash(err);
-                return parserr;
-            }
-        } else crash(error.ThrowWithoutReport);
+    parser.build_nodes() catch |err| if (error_reporter.err_reported) {
+        return .{ error_reporter.outbuf.to_owned_slice(), err };
+    } else {
+        crash(error.ThrowWithoutReport);
     };
 
     if (debug) parser.debug_print();
@@ -210,36 +185,18 @@ pub fn run(
         preprocessed_text,
         parser.l0nodes,
         parser.l1nodes,
-        html_gen_rule_datatable,
         htmlerror,
         responsemode,
     );
 
     // `Generator` only allocates the buffer behind `outbuf`
-    // Caller owns `outbuf`, and nothing else remains on heap (if `pass_buf`)
-    const outbuf = generator.generate_out() catch |generr| {
-        if (error_reporter.err_reported) {
-            if (comptime pass_buf) {
-                return error_reporter.outbuf.to_slice();
-            } else {
-                out_file.?.writeStreamingAll(
-                    io,
-                    error_reporter.outbuf.to_slice(),
-                ) catch |err| crash(err);
-                return generr;
-            }
-        } else crash(error.ThrowWithoutReport);
+    const outbuf = generator.generate_out() catch |err| if (error_reporter.err_reported) {
+        return .{ error_reporter.outbuf.to_owned_slice(), err };
+    } else {
+        crash(error.ThrowWithoutReport);
     };
 
-    if (comptime pass_buf) {
-        return outbuf;
-    } else {
-        out_file.?.writeStreamingAll(
-            io,
-            outbuf,
-        ) catch |err| crash(err);
-        alloc.free(outbuf);
-    }
+    return .{ outbuf, null };
 }
 
 fn generate_response(
@@ -260,5 +217,5 @@ fn generate_response(
 
     // run and build generator.outbuf, but on some user-induced error, throw
     // without exiting to fill the outbuf of the error reporter.
-    return run(alloc, io, true, cwd, in_file, null, true, false, false);
+    return run(alloc, io, cwd, in_file, true, false, false)[0];
 }

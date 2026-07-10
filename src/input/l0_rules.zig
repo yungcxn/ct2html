@@ -13,19 +13,21 @@ const crash = @import("../ErrorReporter.zig").crash;
 
 // every func that is here registered may leave cursor anywhere
 
-pub const rule_defs = [_]Rule.L0Def{
-    .def(0, par, null, null, true),
-    .def('\\', par, null, null, true),
-    .def('?', nonpar, null, null, false),
-    .def('#', heading, null, null, true),
-    .def('`', code_block, null, null, true),
-    .def('>', block_quote, null, null, true),
-    .def('-', dash_items, .unordered_list_begin, .unordered_list_end, true),
-    .def(.{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, num_items, .ordered_list_begin, .ordered_list_end, true),
-    .def('!', attributes, .attribute_begin, .attribute_end, false),
-};
+pub const datatable = hack.StructByteMap(.{
+    .{ .{0}, Rule.L0Def.def(&par, null, null) },
+    .{ .{'\\'}, Rule.L0Def.def(&par, null, null) },
+    .{ .{'?'}, Rule.L0Def.def(&nonpar, null, null) },
+    .{ .{'#'}, Rule.L0Def.def(&heading, null, null) },
+    .{ .{'`'}, Rule.L0Def.def(&code_block, null, null) },
+    .{ .{'>'}, Rule.L0Def.def(&block_quote, null, null) },
+    .{ .{'-'}, Rule.L0Def.def(&dash_items, .unordered_list_begin, .unordered_list_end) },
 
-pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
+    .{ .{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, Rule.L0Def.def(&num_items, .ordered_list_begin, .ordered_list_end) },
+
+    .{ .{'!'}, Rule.L0Def.def(&attributes, .attribute_begin, .attribute_end) },
+}).init();
+
+pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     // we assume we are on '!'
     line: while (p.pop() == '!') {
         p.bounded_skip_whitesp(endat) catch {
@@ -47,9 +49,6 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFin
         const attr_kind = std.meta.stringToEnum(Node.L0Kind, attr_name) orelse {
             return p.e.file_report(error.L0SyntaxError, true, "Unknown attribute name", null);
         };
-        if (!attr_kind.is_attribute()) {
-            return p.e.file_report(error.L0SyntaxError, true, "Invalid attribute name", null);
-        }
 
         // cursor is at ':'...
         p.inc();
@@ -95,7 +94,7 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFin
 }
 
 // read #'s
-pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
+pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const hashtagc: usize = p.skipc('#') catch {
         return p.e.file_report(error.L0SyntaxError, true, "Nothing after heading hashtags", null);
     };
@@ -132,7 +131,7 @@ pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalS
 
 // since having inline code at the start of a par block is not uncommon, we just pass to a par
 // if we only have a single backtick and could look for the l1 inline code in the next parser stage
-pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
+pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const at_start = p.cursor;
     // cursor is assumed to be on the first backtick, begin counting
     const backtick0_c = p.bounded_skipc('`', endat) catch {
@@ -216,7 +215,7 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFin
     return .success;
 }
 
-pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
+pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     outer: while (true) {
         p.inc(); // skip '-'
         p.bounded_skip_whitesp(endat) catch {
@@ -268,7 +267,7 @@ pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFin
     return .success;
 }
 
-pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
+pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const sep_set = .{ '.', ')' };
     outer: while (true) {
 
@@ -349,7 +348,7 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFina
     return .success;
 }
 
-pub fn block_quote(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
+pub fn block_quote(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const quotec = p.skipc('>') catch {
         return p.e.file_report(error.L0SyntaxError, true, "Nothing after block quote", Node.L0Kind.quote_block);
     };
@@ -369,15 +368,15 @@ pub fn block_quote(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFi
 }
 
 // default rule
-pub fn par(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
+pub fn par(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const offset: usize = if (p.peek() == '\\') 1 else 0; // this is the "force par" char
     p.l0nodes.push(.{ .kind = .paragraph, .span = .{ p.cursor + offset, endat } });
 
     return .success;
 }
 
-pub fn nonpar(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0.ApplyFinalState {
-    p.l0nodes.push(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat } });
+pub fn nonpar(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+    p.l0nodes.push(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat }, .contains_l1 = false });
 
     return .success;
 }

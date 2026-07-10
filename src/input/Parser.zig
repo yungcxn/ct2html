@@ -3,6 +3,8 @@ const Node = @import("../element/Node.zig");
 const Parser = @This();
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 const Rule = @import("../element/Rule.zig");
+const l0_rules = @import("l0_rules.zig");
+const l1_rules = @import("l1_rules.zig");
 
 const ErrorReporter = @import("../ErrorReporter.zig");
 
@@ -22,9 +24,6 @@ cursor: usize, // TODO we should provide a second cursor that replaces endat..
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
-l0_rule_datatable: Rule.DataTable(Rule.L0Def.RuleInfo),
-l1_rule_datatable: Rule.DataTable(Rule.L1Def.RuleInfo),
-
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 
 pub fn init(
@@ -32,8 +31,6 @@ pub fn init(
     io: std.Io,
     e: *ErrorReporter,
     text: []const u8,
-    l0_rule_datatable: Rule.DataTable(Rule.L0Def.RuleInfo),
-    l1_rule_datatable: Rule.DataTable(Rule.L1Def.RuleInfo),
     htmlerror: bool,
 ) @This() {
     return .{
@@ -42,8 +39,6 @@ pub fn init(
         .cursor = 0,
         .l0nodes = .init(alloc, 4096),
         .l1nodes = .init(alloc, 4096),
-        .l0_rule_datatable = l0_rule_datatable,
-        .l1_rule_datatable = l1_rule_datatable,
         .e = e,
         .htmlerror = htmlerror,
     };
@@ -89,14 +84,15 @@ fn align_for_block(self: *@This()) ?usize {
 // assume that cursor is at the start of the block, and we do not need to set
 // cursor to some specific position afterwards
 fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError!void {
-    const l0_capture_c = self.peek().?;
+    const l0_capture_c: u8 = self.peek().?;
 
     // cursor is at the first char of the block
 
-    const l0_ri = self.l0_rule_datatable.lookup(l0_capture_c);
+    const l0_ri = l0_rules.datatable.lookup(l0_capture_c) orelse
+        l0_rules.datatable.lookup(0).?;
 
     if (l0_ri.pre_node) |kind| self.l0nodes.push(
-        .{ .kind = kind, .span = null, .contains_l1 = false },
+        .{ .kind = kind, .span = null },
     );
 
     const l0_apply_state = try l0_ri.parse(self, blockend);
@@ -107,14 +103,14 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
             // so if we had a l0_begin pushed node, we must replace it
             // by the p node and reset cursor by -1
             if (l0_ri.pre_node) |_| {
-                const last_pnode = self.l0nodes.buf[self.l0nodes.head - 1];
-                self.l0nodes.buf[self.l0nodes.head - 2] = last_pnode;
+                const last_pnode = self.l0nodes.buf.?[self.l0nodes.head - 1];
+                self.l0nodes.buf.?[self.l0nodes.head - 2] = last_pnode;
                 self.l0nodes.head -= 1;
             }
         },
         .success => if (l0_ri.post_node) |kind| {
             self.l0nodes.push(
-                .{ .kind = kind, .span = null, .contains_l1 = false },
+                .{ .kind = kind, .span = null },
             );
         },
     }
@@ -132,7 +128,7 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void
             continue;
         }
 
-        const l1_ri = self.l1_rule_datatable.lookup(c);
+        const l1_ri = l1_rules.datatable.lookup(c) orelse continue;
         const l1node = try l1_ri.parse_node(self, node_end);
 
         if (l1node) |node| {
@@ -149,7 +145,7 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void
 }
 
 pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
-    self.l0nodes.push(.{ .kind = .begin, .span = null, .contains_l1 = false });
+    self.l0nodes.push(.{ .kind = .begin, .span = null });
 
     // l0 phase
     while (self.align_for_block()) |blockend| {
@@ -157,10 +153,10 @@ pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
         self.cursor = blockend;
     }
 
-    self.l0nodes.push(.{ .kind = .end, .span = null, .contains_l1 = false });
+    self.l0nodes.push(.{ .kind = .end, .span = null });
 
     // l1 phase, reiterate over created l0 nodes
-    for (self.l0nodes.to_slice()) |*node| {
+    for (self.l0nodes.slice_view()) |*node| {
         if (node.contains_l1 and node.span != null) {
             try self.parse_l1_in_l0node(node); // err progapation here aswell
         }
@@ -169,7 +165,7 @@ pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
 
 pub fn debug_print(self: @This()) void {
     std.debug.print("Nodes (L0):\n", .{});
-    for (self.l0nodes.to_slice(), 0..) |node, idx| {
+    for (self.l0nodes.slice_view(), 0..) |node, idx| {
         var text: []const u8 = "";
         if (node.span) |s| text = self.text[s[0]..s[1]];
         std.debug.print(
@@ -179,7 +175,7 @@ pub fn debug_print(self: @This()) void {
     }
 
     std.debug.print("Nodes (L1):\n", .{});
-    for (self.l1nodes.to_slice(), 0..) |node, idx| {
+    for (self.l1nodes.slice_view(), 0..) |node, idx| {
         const text: []const u8 = self.text[node.span[0]..node.span[1]];
         std.debug.print(
             "{d}: {any} (margin:{any})\n   [{s}]\n\n",

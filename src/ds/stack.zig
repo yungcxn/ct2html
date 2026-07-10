@@ -55,7 +55,7 @@ pub fn Stack(T: type) type {
             return &self.buf[self.sp];
         }
 
-        pub fn to_slice(self: *Stack(T)) ?[]T {
+        pub fn slice_view(self: *Stack(T)) ?[]T {
             if (self.empty()) return null;
 
             return self.buf[0 .. self.sp + 1];

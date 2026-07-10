@@ -11,14 +11,6 @@ fn max_enum_val(comptime E: type) comptime_int {
     return max;
 }
 
-pub fn force_u8slice(comptime comptime_vald_tup: anytype) []const u8 {
-    var toret: []const u8 = &.{};
-    for (comptime_vald_tup) |val| {
-        toret = toret ++ .{val};
-    }
-    return toret;
-}
-
 pub fn force_tup(maybe_tuple: anytype) switch (@typeInfo(@TypeOf(maybe_tuple))) {
     .@"struct" => @TypeOf(maybe_tuple),
     else => @Tuple(&.{@TypeOf(maybe_tuple)}),
@@ -26,5 +18,56 @@ pub fn force_tup(maybe_tuple: anytype) switch (@typeInfo(@TypeOf(maybe_tuple))) 
     return switch (@typeInfo(@TypeOf(maybe_tuple))) {
         .@"struct" => maybe_tuple,
         else => .{maybe_tuple},
+    };
+}
+
+// @TypeOf(key_val_table[0]) = struct {
+//     @"0": []u8,
+//     @"1": V,
+// };
+
+pub fn StructByteMap(
+    comptime key_val_table: anytype,
+) type {
+    const V = @TypeOf(key_val_table[0][1]);
+    const valuec = key_val_table.len;
+
+    return struct {
+        lookup_table: [256]u8, // must be freed afterwards
+        values: [valuec]V,
+
+        pub fn init() @This() {
+            const values: [valuec]V = comptime blk: {
+                var list: [valuec]V = undefined;
+                for (key_val_table, 0..) |key_val, i| {
+                    list[i] = key_val[1];
+                }
+
+                break :blk list;
+            };
+
+            const lookup_table: [256]u8 = comptime blk: {
+                var table: [256]u8 = @splat(0xFF);
+                for (key_val_table, 0..) |key_val, i| {
+                    for (key_val[0]) |key| {
+                        const int_key = if (@typeInfo(@TypeOf(key)) == .@"enum") @intFromEnum(key) else key;
+                        if (int_key == 0xFF) {
+                            @compileError("Invalid key value 0xFF for StructByteMap");
+                        }
+                        table[int_key] = i;
+                    }
+                }
+
+                break :blk table;
+            };
+
+            return .{ .lookup_table = lookup_table, .values = values };
+        }
+
+        pub fn lookup(self: @This(), key: u8) ?V {
+            const idx = self.lookup_table[key];
+            if (idx == 0xFF) return null;
+            return self.values[idx];
+        }
     };
 }

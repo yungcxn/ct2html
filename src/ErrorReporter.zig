@@ -26,6 +26,10 @@ pub fn init(
     };
 }
 
+pub fn deinit(self: *@This()) void {
+    self.outbuf.deinit();
+}
+
 pub fn set_parser(self: *@This(), parser: *Parser) void {
     self.parser = parser;
 }

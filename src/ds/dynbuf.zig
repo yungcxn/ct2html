@@ -4,7 +4,7 @@ const crash = @import("../ErrorReporter.zig").crash;
 pub fn DynBuf(T: type) type {
     return struct {
         alloc: std.mem.Allocator,
-        buf: []T,
+        buf: ?[]T,
         head: usize = 0,
         cap: usize,
 
@@ -17,12 +17,12 @@ pub fn DynBuf(T: type) type {
         }
 
         pub fn deinit(self: *DynBuf(T)) void {
-            self.alloc.free(self.buf);
+            self.alloc.free(self.buf orelse return);
         }
 
         fn grow(self: *DynBuf(T)) void {
             const new_cap = self.cap * 2;
-            self.buf = self.alloc.realloc(self.buf, new_cap) catch return crash(error.OOM);
+            self.buf = self.alloc.realloc(self.buf.?, new_cap) catch return crash(error.OOM);
             self.cap = new_cap;
         }
 
@@ -31,7 +31,7 @@ pub fn DynBuf(T: type) type {
                 self.grow();
             }
 
-            self.buf[self.head] = value;
+            self.buf.?[self.head] = value;
             self.head += 1;
         }
 
@@ -40,16 +40,18 @@ pub fn DynBuf(T: type) type {
                 self.grow();
             }
 
-            @memcpy(self.buf[self.head .. self.head + slice.len], slice);
+            @memcpy(self.buf.?[self.head .. self.head + slice.len], slice);
             self.head += slice.len;
         }
 
-        pub fn to_slice(self: DynBuf(T)) []T {
-            return self.buf[0..self.head];
+        pub fn slice_view(self: DynBuf(T)) []T {
+            return self.buf.?[0..self.head];
         }
 
-        pub fn buf_ptr(self: *DynBuf(T)) *[]T {
-            return &self.buf;
+        pub fn to_owned_slice(self: *DynBuf(T)) []T {
+            const trimmed = self.alloc.realloc(self.buf.?, self.head) catch return crash(error.OOM);
+            self.buf = null;
+            return trimmed;
         }
     };
 }
