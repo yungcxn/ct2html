@@ -67,9 +67,19 @@ pub const argdef = .{
     },
 };
 
+inline fn print_elapsed(io: std.Io, start: std.Io.Timestamp, comptime fmt: []const u8) void {
+    const end = std.Io.Clock.now(.awake, io);
+    const duration = start.durationTo(end);
+    const ns: i96 = duration.toNanoseconds();
+    const ms: f128 = @as(f128, @floatFromInt(ns)) / 1_000_000.0;
+    std.log.info(fmt, .{ms});
+}
+
 pub fn main(init: std.process.Init) void {
     const io = init.io;
     const alloc = init.gpa;
+
+    const start = std.Io.Clock.now(.awake, io);
 
     const argslice = init.minimal.args.toSlice(
         alloc,
@@ -143,6 +153,7 @@ pub fn main(init: std.process.Init) void {
                 std.log.info("Cache hit for: {s}", .{args.in});
                 out_file.writeStreamingAll(io, cachecontent) catch return crash(error.OOM);
                 alloc.free(cachecontent);
+                print_elapsed(io, start, "Cached run took: {} ms");
                 return;
             }
         }
@@ -156,6 +167,7 @@ pub fn main(init: std.process.Init) void {
         }
 
         out_file.writeStreamingAll(io, outbuf) catch return crash(error.OOM);
+        print_elapsed(io, start, "Full run took: {} ms");
     }
 }
 
@@ -240,6 +252,8 @@ fn alloc_response(
     path: []const u8,
     cache: *filex.Cache,
 ) error{FileNotFound}![]const u8 {
+    const start = std.Io.Clock.now(.awake, io);
+
     std.log.info("requested: {s}", .{path});
     if (!std.mem.endsWith(u8, path, ".ct")) {
         return error.FileNotFound;
@@ -253,6 +267,7 @@ fn alloc_response(
 
     if (cache.try_owned_cacheload(in_file, path2)) |buf| {
         std.log.info("Cache hit for: {s}", .{path2});
+        print_elapsed(io, start, "Cached run took: {} ms");
         return buf;
     } else {
         const out, const run_err = run(alloc, io, cwd, in_file, true, false, false);
@@ -260,6 +275,7 @@ fn alloc_response(
             cache.force_store(out, path2);
             std.log.info("Stored cache for: {s}", .{path2});
         }
+        print_elapsed(io, start, "Full run took: {} ms");
         return out;
     }
 }
