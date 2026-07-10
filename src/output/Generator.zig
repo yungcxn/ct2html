@@ -5,9 +5,6 @@ const ErrorReporter = @import("../ErrorReporter.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 const html_rules = @import("html_rules.zig");
 
-// TODO: caching by saving outfile at /tmp/ct2html/datetimenanoseconds.html (faster than hash)
-// TODO: print special non ascii chars correctly...
-
 pub const GenError = error{
     OOM,
     L0NodeNotFound,
@@ -60,7 +57,6 @@ pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void 
 }
 
 // TODO beautify out by indenting
-// TODO io_uring?
 pub fn generate_out(self: *@This()) GenError![]const u8 {
     errdefer self.outbuf.deinit();
     if (self.responsemode) {

@@ -60,6 +60,11 @@ pub const argdef = .{
         .default = false,
         .desc = "Runs in web server mode (on 127.0.0.1:8080)",
     },
+    argx.Arg(bool){
+        .fieldname = "cleantmp",
+        .default = false,
+        .desc = "Cleans the temp-folder for file caching at start (/tmp/ct2html/)",
+    },
 };
 
 pub fn main(init: std.process.Init) void {
@@ -84,9 +89,31 @@ pub fn main(init: std.process.Init) void {
     };
     defer filex.close_dir(io, cwd);
 
+    const tmp = filex.create_dir(io, null, "/tmp/ct2html/") catch |err| {
+        std.log.err("Failed to open/create tmp directory: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+    defer filex.close_dir(io, tmp);
+
+    if (args.cleantmp) {
+        var it = tmp.iterate();
+        while (it.next(io) catch |err| crash(err)) |entry| {
+            switch (entry.kind) {
+                .directory => tmp.deleteTree(io, entry.name) catch |err| crash(err),
+                else => tmp.deleteFile(io, entry.name) catch |err| crash(err),
+            }
+            std.log.info("Deleted from cache: {s}", .{entry.name});
+        }
+    }
+
+    const abscwd_path = cwd.realPathFileAlloc(io, ".", alloc) catch |err| crash(err);
+    defer alloc.free(abscwd_path);
+
+    var cache = filex.Cache.init(alloc, io, tmp, abscwd_path);
+    defer cache.deinit();
+
     if (args.webservermode) {
-        webserver.set_resp_body_constructor(&generate_response);
-        webserver.run(alloc, io, cwd);
+        webserver.run(alloc_response, alloc, io, cwd, &cache);
     } else {
         if (!std.mem.eql(u8, args.in, "stdin") and !std.mem.endsWith(u8, args.in, ".ct")) {
             std.log.err("Input file must have .ct extension", .{});
@@ -102,7 +129,7 @@ pub fn main(init: std.process.Init) void {
             std.log.err("Failed to open input file: {s}", .{@errorName(err)});
             std.process.exit(1);
         };
-        errdefer filex.close(io, in_file); // closed in preprocessor
+        defer filex.close(io, in_file); // closed in preprocessor
 
         const out_file = filex.create(io, cwd, args.out) catch |err| {
             std.log.err("Failed to open output file: {s}", .{@errorName(err)});
@@ -110,16 +137,23 @@ pub fn main(init: std.process.Init) void {
         };
         defer filex.close(io, out_file);
 
-        const outbuf: []const u8 = run(
-            alloc,
-            io,
-            cwd,
-            in_file,
-            args.htmlerror,
-            args.responsemode,
-            args.debug,
-        )[0];
+        if (in_file.handle != std.Io.File.stdin().handle) {
+            const opt_cachecontent = cache.try_owned_cacheload(in_file, args.in);
+            if (opt_cachecontent) |cachecontent| {
+                std.log.info("Cache hit for: {s}", .{args.in});
+                out_file.writeStreamingAll(io, cachecontent) catch return crash(error.OOM);
+                alloc.free(cachecontent);
+                return;
+            }
+        }
+
+        const outbuf = run(alloc, io, cwd, in_file, args.htmlerror, args.responsemode, args.debug)[0];
         defer alloc.free(outbuf);
+
+        if (in_file.handle != std.Io.File.stdin().handle) {
+            cache.force_store(outbuf, args.in);
+            std.log.info("Stored cache for: {s}", .{args.in});
+        }
 
         out_file.writeStreamingAll(io, outbuf) catch return crash(error.OOM);
     }
@@ -199,11 +233,12 @@ pub fn run(
     return .{ outbuf, null };
 }
 
-fn generate_response(
+fn alloc_response(
     alloc: std.mem.Allocator,
     io: std.Io,
     cwd: std.Io.Dir,
     path: []const u8,
+    cache: *filex.Cache,
 ) error{FileNotFound}![]const u8 {
     std.log.info("requested: {s}", .{path});
     if (!std.mem.endsWith(u8, path, ".ct")) {
@@ -214,8 +249,15 @@ fn generate_response(
     if (path[0] == '/') path2 = path[1..]; // remove leading slash
 
     const in_file = filex.open(io, cwd, path2) catch return error.FileNotFound;
+    defer in_file.close(io);
 
-    // run and build generator.outbuf, but on some user-induced error, throw
-    // without exiting to fill the outbuf of the error reporter.
-    return run(alloc, io, cwd, in_file, true, false, false)[0];
+    if (cache.try_owned_cacheload(in_file, path2)) |buf| {
+        std.log.info("Cache hit for: {s}", .{path2});
+        return buf;
+    } else {
+        const out = run(alloc, io, cwd, in_file, true, false, false)[0];
+        cache.force_store(out, path2);
+        std.log.info("Stored cache for: {s}", .{path2});
+        return out;
+    }
 }

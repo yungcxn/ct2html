@@ -25,6 +25,7 @@ pub fn preprocess(
     } else {
         fbytes = filex.alloc_file_bytes(alloc, io, file0);
     }
+    defer alloc.free(fbytes);
     var dynbuf = DynBuf(u8).init(alloc, fbytes.len * 2);
     errdefer dynbuf.deinit();
 
@@ -49,39 +50,42 @@ fn walk_and_merge(
     e: *ErrorReporter,
     dynbuf: *DynBuf(u8),
     cwd: std.Io.Dir,
-    file0: std.Io.File,
-    fbytes: []const u8,
+    file0: std.Io.File, // borrowed, not closed
+    fbytes: []const u8, // borrowed, not free'd
 ) FileWalkError!void {
     // null: file without reader, meaning `stdin`
     var sbuf_stack = Stack(ByteStream).init(alloc, 4);
     defer sbuf_stack.deinit();
-    sbuf_stack.push(.init(fbytes));
+    sbuf_stack.push(.init(fbytes)); // not free'd
 
     // null: file without need to be cyclic checked or closed, meaning `stdin`
     var file_stack = Stack(std.Io.File).init(alloc, 4);
     defer file_stack.deinit();
-    file_stack.push(file0);
+    file_stack.push(file0); // not closed
+
+    var depth: usize = 1;
 
     errdefer {
-        while (file_stack.pop()) |file| {
-            filex.close(io, file);
+        while (depth > 1) : (depth -= 1) {
+            if (file_stack.pop()) |file| filex.close(io, file);
+            if (sbuf_stack.pop()) |sbuf| alloc.free(sbuf.buf);
         }
-
-        while (sbuf_stack.pop()) |sbuf| {
-            alloc.free(sbuf.buf);
-        }
+        _ = file_stack.pop();
+        _ = sbuf_stack.pop();
     }
 
     while (sbuf_stack.peek_addr()) |sbuf| {
         const start_cursor = sbuf.cursor;
         const pre_at_span = sbuf.take_exc('@') orelse {
             dynbuf.append(sbuf.buf[start_cursor..sbuf.cursor]);
-            alloc.free(sbuf.buf);
-            _ = sbuf_stack.pop();
-            if (file_stack.pop()) |file| {
-                filex.close(io, file);
+            depth -= 1;
+            if (sbuf_stack.pop()) |sb| {
+                if (depth >= 1) alloc.free(sb.buf);
             }
-            continue; // reading file is done; next
+            if (file_stack.pop()) |file| {
+                if (depth >= 1) filex.close(io, file);
+            }
+            continue;
         };
 
         const post_at_cursor = sbuf.cursor;
@@ -144,5 +148,6 @@ fn walk_and_merge(
         const newfilebuf = filex.alloc_file_bytes(alloc, io, newfile);
         sbuf_stack.push(.init(newfilebuf));
         file_stack.push(newfile);
+        depth += 1;
     }
 }

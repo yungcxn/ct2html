@@ -6,10 +6,87 @@ const crash = @import("ErrorReporter.zig").crash;
 const file_report = @import("ErrorReporter.zig").file_report;
 
 const max_file_size = 50 * 1024 * 1024;
+const max_path_len = 500;
 
 pub const FileError = error{
     FileNotFound,
     NotADir,
+};
+
+// Note on `Cache`: when imported files get changed, they do not get recognized until root-file changes
+pub const Cache = struct {
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    cache_dir: std.Io.Dir,
+    abscwd_path: []const u8,
+
+    pub fn init(alloc: std.mem.Allocator, io: std.Io, cache_dir: std.Io.Dir, abscwd_path: []const u8) @This() {
+        return @This(){
+            .alloc = alloc,
+            .io = io,
+            .cache_dir = cache_dir,
+            .abscwd_path = abscwd_path,
+        };
+    }
+
+    pub fn deinit(self: *@This()) void {
+        _ = self;
+    }
+
+    // - either path does not exist, (error)
+    // - or there's nothing in cache (null)
+    // - or we found something       ([]const u8)
+    pub fn try_owned_cacheload(
+        self: *@This(),
+        file: std.Io.File,
+        realpath: []const u8,
+    ) ?[]const u8 {
+        const abspathbuf = std.fs.path.join(self.alloc, &.{ self.abscwd_path, realpath }) catch |e| crash(e);
+        defer self.alloc.free(abspathbuf);
+
+        const cachefile: std.Io.File, var new: bool = self.get_cachefile(abspathbuf);
+        defer cachefile.close(self.io);
+        if ((cachefile.length(self.io) catch |e| crash(e)) == 0) new = true;
+
+        if (new) return null;
+
+        // here, we have a cachefile, that is not `new` -> it has content, that could be old
+        const file_modns = (file.stat(self.io) catch |e| crash(e)).mtime.nanoseconds;
+        const cachefile_modns = (cachefile.stat(self.io) catch |e| crash(e)).mtime.nanoseconds;
+        if (file_modns >= cachefile_modns) { // file has newer content -> cache is obsolete
+            return null;
+        }
+
+        // under the 2 assumptions of 1. being not `new` and 2. being newer than the cached file...
+        return alloc_file_bytes(self.alloc, self.io, cachefile);
+    }
+
+    pub fn force_store(self: *@This(), towrite: []const u8, realpath: []const u8) void {
+        const abspathbuf = std.fs.path.join(self.alloc, &.{ self.abscwd_path, realpath }) catch |e| crash(e);
+        defer self.alloc.free(abspathbuf);
+
+        to_cache_fname(abspathbuf);
+
+        const cachefile = self.cache_dir.createFile(self.io, abspathbuf, .{}) catch |err| crash(err);
+        defer cachefile.close(self.io);
+
+        cachefile.writeStreamingAll(self.io, towrite) catch |err| crash(err);
+    }
+
+    fn get_cachefile(self: *@This(), abspathbuf: []u8) struct { std.Io.File, bool } {
+        to_cache_fname(abspathbuf);
+        return .{ self.cache_dir.openFile(self.io, abspathbuf, .{}) catch return .{
+            self.cache_dir.createFile(self.io, abspathbuf, .{}) catch |err| crash(err), true,
+        }, false };
+    }
+
+    fn to_cache_fname(abspathbuf: []u8) void {
+        for (abspathbuf) |*item| {
+            if (item.* == '/') item.* = '.';
+        }
+
+        abspathbuf[0] = '~';
+    }
 };
 
 pub fn open_dir(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.Dir {
@@ -40,6 +117,17 @@ pub fn create(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.F
     }
 
     return dir.createFile(io, path, .{}) catch |err| crash(err);
+}
+
+pub fn create_dir(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.Dir {
+    var dir: std.Io.Dir = undefined;
+    if (cwd) |non_default_cwd| {
+        dir = non_default_cwd;
+    } else {
+        dir = std.Io.Dir.cwd();
+    }
+
+    return dir.createDirPathOpen(io, path, .{}) catch |err| crash(err);
 }
 
 pub fn open(io: std.Io, cwd: ?std.Io.Dir, path: []const u8) FileError!std.Io.File {

@@ -37,7 +37,8 @@ pub const L0Kind = enum(u8) {
     nonparagraph,
     paragraph,
 
-    footnote, // TODO
+    // bare footnotes are not planned due to them being at the page end -- not user-friendly in web
+    detail, // TODO
     footnote_block, // TODO
     sidenote, // TODO
 
