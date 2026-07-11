@@ -24,10 +24,55 @@ pub const datatable = hack.StructByteMap(.{
 
     .{ .{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, Rule.L0Def.def(&num_items, .ordered_list_begin, .ordered_list_end) },
 
+    .{ .{'@'}, Rule.L0Def.def(&blockcommand, null, null) },
+
     // this is special: head_anchor gets released, but attributes not. then later at generation,
     //   throught the attribute handler, some get written into it
     .{ .{'!'}, Rule.L0Def.def(&attributes, .head_anchor, null) },
 }).init();
+
+pub fn blockcommand(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+    const start = p.cursor;
+    // we assume we are on '@'
+    const atc: usize = p.skipc('@') catch {
+        return p.e.file_report(error.L0SyntaxError, true, "Nothing after @ for blockcommand", null);
+    };
+
+    if (atc != 2) {
+        // just do a par out of this, since it could be a usual @command() at the start of a par
+        p.cursor = start;
+        _ = par(p, endat) catch |err| return err;
+        return .transitioned;
+    }
+
+    const blockcmd_name_start = p.cursor;
+
+    p.bounded_find(':', endat) catch {
+        return p.e.file_report(error.L0SyntaxError, true, "Missing colon after blockcommand name", null);
+    };
+
+    // cursor is on ':', so we check if the blockcommand name is free of whitespace
+    if (!p.bounds_freeof_whitesp(blockcmd_name_start, p.cursor)) {
+        return p.e.file_report(error.L0SyntaxError, true, "Space between blockcommand name and colon", null);
+    }
+
+    const blockcmd_name = p.text[blockcmd_name_start..p.cursor];
+    const blockcmd_kind = std.meta.stringToEnum(Node.L0Kind, blockcmd_name) orelse {
+        return p.e.file_report(error.L0SyntaxError, true, "Unknown blockcommand name", null);
+    };
+
+    // cursor is at ':'...
+    p.inc();
+    // ...now at first char of value
+
+    p.l0nodes.push(.{
+        .kind = blockcmd_kind,
+        .span = .{ p.cursor, endat },
+        .contains_l1 = true,
+    });
+
+    return .success;
+}
 
 pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     // we assume we are on '!'

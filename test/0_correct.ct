@@ -1,6 +1,5 @@
 !style:value
 !header:othervalue
-!raw:<!-- this is a comment -->
 @import(0_correct/base_attr.ct)
 
 # My title
@@ -37,10 +36,13 @@ This is some example
 text, where I'd like to show my `inline code` -- and
 how my blocks work.
 
-This is my @img(argumenzz).
+This is my 
+
+@@img:argumenzz
 
 This is the next block.
 
+@@heading3:Hi # unconventional way lol
 
 And this is another block.
 
@@ -87,10 +89,11 @@ The end before the end.
 1. Again 
 
 Here I want @link(https://www.google.com) without a name,
-and @link(https://www.google.com, with a name)...
+
+@link(https://www.google.com, with a name)...
 
 Here is some @raw(<div>raw html</div>) and some @raw(<span>inline raw html</span>).
 
-?@img(img, text)
+@@img:img, text
 
 The end!

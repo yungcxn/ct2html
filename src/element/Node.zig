@@ -64,13 +64,19 @@ pub const L0Kind = enum(u8) {
     num_paren_item_label,
     num_paren_item_text,
 
+    // blockcommand section: @@commandname: // TODO!: for all special nodes, safety measures by type
+    inline_script,
+    img, // TODO size
+    header, // TODO
+    footer, // TODO
+    ar,
+
     // attribute section
     style,
     script,
-    header,
+    title,
     heading_icon,
     abbreviation_def, // TODO!
-    raw,
 
     end,
 };
@@ -92,18 +98,14 @@ pub const L1Kind = enum(u8) {
 
     math, // TODO with $
 
-    // command section
+    // inline command section: @command(...)
     link,
-    script,
     big, // TODO!
     small, // TODO!
     relsize, // TODO!
     color, // TODO!
-    img, // TODO size
     div, // TODO!
     span, // TODO!
-    header, // TODO
-    footer, // TODO
     ar,
     raw,
 };
