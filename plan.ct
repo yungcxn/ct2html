@@ -1,0 +1,41 @@
+# Parsing and generating plan
+
+## How the parser works
+
+1. text -> blocks = {block[0], block[1], ...}
+2. block[i] -> push l0node: [l0nodekind, textspan]
+3. l0node[i] -> push l1node: [l1nodekind, textspan]
+
+## How the generator prints
+
+```
+for (l0node in l0nodes):
+    l0 rule lookup;
+    apply l0 replace rule (if existing) and continue;
+    apply l0 pre rule (if existing);
+    defer apply l0 post rule (if existing);
+    defer print the rest of the l0 node's text (if any);
+    if (l0node.l1childhead == null or l0node.l1child0 == null) continue;
+    for (self.l1nodes.slice_view()[l0node.l1child0.?..l0node.l1childhead.?]) |l1node| {
+        self.print_span(toprint0, l1node.span[0] - l1node.margin[0]);
+        const l1_ri = html_rules.datatable.lookup(
+            @intFromEnum(l1node.kind),
+        ) orelse return ErrorReporter.crash(GenError.NoL1RuleForKind);
+        switch (l1_ri.algo) {
+            .text => |text| {
+                self.print(text);
+            },
+            .prepost => |pair| {
+                self.print(pair.pre);
+                self.print_span(l1node.span[0], l1node.span[1]);
+                self.print(pair.post);
+            },
+            .print => |f| {
+                try f(self, l1node.span);
+            },
+        }
+        toprint0 = l1node.span[1] + l1node.margin[1];
+    }
+}
+return self.outbuf.to_owned_slice();
+```

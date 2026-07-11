@@ -6,6 +6,8 @@ const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 const html_rules = @import("html_rules.zig");
 const Attributor = @import("../internal/Attributor.zig");
 
+// todo: correctly handle printing <>
+
 pub const GenError = error{
     OOM,
     L0NodeNotFound,

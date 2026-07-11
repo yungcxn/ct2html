@@ -14,8 +14,12 @@ pub const L0 = struct {
 pub const L1 = struct {
     kind: L1Kind,
     span: @Vector(2, usize), // mandatory, unlike above
-
     margin: @Vector(2, usize) = .{ 0, 0 },
+
+    l1child0: ?usize = null,
+    l1childhead: ?usize = null,
+
+    contains_l1: bool = true,
 };
 
 pub const L0Kind = enum(u8) {
@@ -42,7 +46,7 @@ pub const L0Kind = enum(u8) {
     // all code_block_* nodes get omitted besides _caption, which is not always present.
     code_block_header,
     code_block_meta,
-    code_block,
+    code_block, // TODO: should support more than one block in content
 
     quote_block,
     bold_quote_block,
