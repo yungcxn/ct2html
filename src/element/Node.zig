@@ -104,6 +104,6 @@ pub const L1Kind = enum(u8) {
     span, // TODO!
     header, // TODO
     footer, // TODO
-    ar, // TODO : arabic
+    ar,
     raw,
 };
