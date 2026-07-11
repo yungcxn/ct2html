@@ -43,7 +43,7 @@ pub const datatable = hack.StructByteMap(.{
     .{ &.{Node.L0Kind.num_paren_item_text}, Rule.GenDef.def(.{ "", "</li>" }) },
 
     .{ &.{Node.L0Kind.img}, Rule.GenDef.def(&command_img) },
-    .{ &.{Node.L0Kind.inline_script}, Rule.GenDef.def(.{ "<script src=\"", "\"></script>" }) },
+    .{ &.{Node.L0Kind.script}, Rule.GenDef.def(.{ "<script src=\"", "\"></script>" }) },
     .{ &.{Node.L0Kind.ar}, Rule.GenDef.def(.{ "<p dir=\"rtl\" lang=\"ar\">", "</p>" }) },
     // L1
     .{ &.{Node.L1Kind.inline_code}, Rule.GenDef.def(.{ "<code>", "</code>" }) },

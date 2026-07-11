@@ -65,15 +65,14 @@ pub const L0Kind = enum(u8) {
     num_paren_item_text,
 
     // blockcommand section: @@commandname: // TODO!: for all special nodes, safety measures by type
-    inline_script,
     img, // TODO size
     header, // TODO
     footer, // TODO
     ar,
 
     // attribute section
-    style,
-    script,
+    style, // also a blockcommand
+    script, // also a blockcommand
     title,
     heading_icon,
     abbreviation_def, // TODO!
