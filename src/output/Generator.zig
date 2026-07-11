@@ -4,6 +4,7 @@ const Rule = @import("../element/Rule.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 const html_rules = @import("html_rules.zig");
+const Attributor = @import("../internal/Attributor.zig");
 
 pub const GenError = error{
     OOM,
@@ -13,8 +14,10 @@ pub const GenError = error{
     UnnecessaryNodePresented,
 };
 
+alloc: std.mem.Allocator, // for rule functions to alloc and dealloc, not directly for @This()
 io: std.Io, // for logging and writing to file
 e: *ErrorReporter,
+attributor: *Attributor,
 
 textin: []const u8, // borrowed from parser
 
@@ -30,6 +33,7 @@ pub fn init(
     alloc: std.mem.Allocator,
     io: std.Io,
     e: *ErrorReporter,
+    attributor: *Attributor,
     textin: []const u8,
     l0nodes: DynBuf(Node.L0),
     l1nodes: DynBuf(Node.L1),
@@ -37,8 +41,10 @@ pub fn init(
     responsemode: bool,
 ) @This() {
     return .{
+        .alloc = alloc,
         .io = io,
         .e = e,
+        .attributor = attributor,
         .textin = textin,
         .l0nodes = l0nodes,
         .l1nodes = l1nodes,
@@ -68,10 +74,15 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
             @intFromEnum(l0node.kind),
         ) orelse return ErrorReporter.crash(GenError.L0NodeNotFound);
 
+        if (l0_ri.algo == .print) {
+            try l0_ri.algo.print(self, l0node.span);
+            continue;
+        }
+
         const l0pretext = switch (l0_ri.algo) {
             .prepost => |pair| pair.pre,
             .text => |text| text,
-            else => @panic("Replace-Rule not supported for L0"),
+            else => unreachable,
         };
         self.print(l0pretext);
 
@@ -79,7 +90,7 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
             const l0posttext = switch (l0_ri.algo) {
                 .prepost => |pair| pair.post,
                 .text => "", // no post text for single text l0 rule
-                else => @panic("Replace-Rule not supported for L0"),
+                else => unreachable,
             };
             self.print(l0posttext);
         }

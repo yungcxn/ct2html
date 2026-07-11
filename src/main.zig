@@ -13,6 +13,7 @@ const crash = ErrorReporter.crash;
 const file_report = ErrorReporter.file_report;
 const throw = ErrorReporter.throw;
 const webserver = @import("webserver.zig");
+const Attributor = @import("internal/Attributor.zig");
 
 // these errors get thrown through the reporting system of `ErrorReporter`
 
@@ -184,6 +185,9 @@ pub fn run(
     var error_reporter = ErrorReporter.init(alloc, io, htmlerror, responsemode);
     defer error_reporter.deinit();
 
+    var attributor = Attributor.init(alloc);
+    defer attributor.deinit();
+
     // this allocates the preprocessed text []const u8
     const preprocessed_text: []const u8 = Preprocessor.preprocess(
         alloc,
@@ -208,6 +212,7 @@ pub fn run(
         alloc,
         io,
         &error_reporter,
+        &attributor,
         preprocessed_text,
         htmlerror,
     );
@@ -228,6 +233,7 @@ pub fn run(
         alloc,
         io,
         &error_reporter,
+        &attributor,
         preprocessed_text,
         parser.l0nodes,
         parser.l1nodes,

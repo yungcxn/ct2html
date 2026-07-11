@@ -5,7 +5,7 @@ const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 const Rule = @import("../element/Rule.zig");
 const l0_rules = @import("l0_rules.zig");
 const l1_rules = @import("l1_rules.zig");
-
+const Attributor = @import("../internal/Attributor.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 
 pub const ParsingError = error{
@@ -17,9 +17,10 @@ pub const ParsingError = error{
 
 io: std.Io, // for error logging only
 e: *ErrorReporter,
+attributor: *Attributor,
 text: []const u8,
 // TODO maybe stream based?
-cursor: usize, // TODO we should provide a second cursor that replaces endat..
+cursor: usize,
 
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
@@ -30,6 +31,7 @@ pub fn init(
     alloc: std.mem.Allocator,
     io: std.Io,
     e: *ErrorReporter,
+    attributor: *Attributor,
     text: []const u8,
     htmlerror: bool,
 ) @This() {
@@ -40,6 +42,7 @@ pub fn init(
         .l0nodes = .init(alloc, 4096),
         .l1nodes = .init(alloc, 4096),
         .e = e,
+        .attributor = attributor,
         .htmlerror = htmlerror,
     };
 }

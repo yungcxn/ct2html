@@ -44,7 +44,7 @@ pub const GenDef = struct {
         prepost: struct { pre: []const u8, post: []const u8 },
 
         // only for l1:
-        print: *const fn (g: *Generator, span: @Vector(2, usize)) Generator.GenError!void,
+        print: *const fn (g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void,
     },
 
     pub fn def(algoval: anytype) GenDef {

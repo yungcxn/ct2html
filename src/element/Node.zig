@@ -21,11 +21,7 @@ pub const L1 = struct {
 pub const L0Kind = enum(u8) {
     begin,
 
-    siteheader, // TODO
-    sitefooter, // TODO
-
-    attribute_begin,
-    attribute_end,
+    head_anchor,
 
     heading1,
     heading2,
@@ -36,11 +32,12 @@ pub const L0Kind = enum(u8) {
 
     nonparagraph,
     paragraph,
+    arabic_paragraph,
 
     // bare footnotes are not planned due to them being at the page end -- not user-friendly in web
-    detail, // TODO
-    footnote_block, // TODO
-    sidenote, // TODO
+    detail, // TODO - ausklappbar
+    footnote_block, // TODO - block
+    sidenote, // TODO - sidenote - beautiful
 
     // all code_block_* nodes get omitted besides _caption, which is not always present.
     code_block_header,
@@ -71,6 +68,7 @@ pub const L0Kind = enum(u8) {
     style,
     script,
     header,
+    heading_icon,
     abbreviation_def, // TODO!
     raw,
 
@@ -104,5 +102,8 @@ pub const L1Kind = enum(u8) {
     img, // TODO size
     div, // TODO!
     span, // TODO!
+    header, // TODO
+    footer, // TODO
+    ar, // TODO : arabic
     raw,
 };

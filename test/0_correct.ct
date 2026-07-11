@@ -3,6 +3,8 @@
 !raw:<!-- this is a comment -->
 @import(0_correct/base_attr.ct)
 
+# My title
+
 Here is some *bold-containing* text, and some **italic-containing** txt.
 ***both***,
 and **multi-line-
@@ -75,6 +77,8 @@ The end before the end.
 2) again
 3) multi-
    line
+
+## Some SMALLER heading
 
 1. Numerical list
 

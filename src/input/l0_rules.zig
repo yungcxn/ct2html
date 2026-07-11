@@ -24,7 +24,9 @@ pub const datatable = hack.StructByteMap(.{
 
     .{ .{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, Rule.L0Def.def(&num_items, .ordered_list_begin, .ordered_list_end) },
 
-    .{ .{'!'}, Rule.L0Def.def(&attributes, .attribute_begin, .attribute_end) },
+    // this is special: head_anchor gets released, but attributes not. then later at generation,
+    //   throught the attribute handler, some get written into it
+    .{ .{'!'}, Rule.L0Def.def(&attributes, .head_anchor, null) },
 }).init();
 
 pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
@@ -64,7 +66,7 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
         p.bounded_find('\n', endat) catch |err| {
             if (err == Parser.ParsingError.OutOfBounds) {
                 // last line, so must accept it
-                p.l0nodes.push(.{
+                p.attributor.push(.{
                     .kind = attr_kind,
                     .span = .{ value_start, endat },
                     .contains_l1 = false,
@@ -76,18 +78,13 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
         };
 
         // cursor is on '\n'
-        p.l0nodes.push(.{
+        p.attributor.push(.{
             .kind = attr_kind,
             .span = .{ value_start, p.cursor },
             .contains_l1 = false,
         });
 
         p.inc(); // cursor is now on the first char of the next line, which could be '!' for next
-    }
-
-    // we check if we even produced anything
-    if (p.l0nodes.head == 2) {
-        return p.e.file_report(error.L0SyntaxError, true, "Empty attribute section", null);
     }
 
     return .success;
@@ -125,7 +122,7 @@ pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFin
         return p.e.file_report(error.L0SyntaxError, true, "Newline in heading", kind);
     }
 
-    p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat } });
+    p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat }, .contains_l1 = false });
     return .success;
 }
 
@@ -376,7 +373,7 @@ pub fn par(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalSt
 }
 
 pub fn nonpar(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
-    p.l0nodes.push(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat }, .contains_l1 = false });
+    p.l0nodes.push(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat }, .contains_l1 = true });
 
     return .success;
 }
