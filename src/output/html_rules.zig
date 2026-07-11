@@ -58,6 +58,7 @@ pub const datatable = hack.StructByteMap(.{
     .{ &.{Node.L1Kind.img}, Rule.GenDef.def(&command_img) },
     .{ &.{Node.L1Kind.raw}, Rule.GenDef.def(.{ "", "" }) }, // just passed through
     .{ &.{Node.L1Kind.script}, Rule.GenDef.def(.{ "<script src=\"", "\"></script>" }) },
+    .{ &.{Node.L1Kind.ar}, Rule.GenDef.def(.{ "<span dir=\"rtl\" lang=\"ar\">", "</span>" }) },
 }).init();
 
 // for those attributes that get generated into the head section

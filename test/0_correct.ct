@@ -12,6 +12,8 @@ and **multi-line-
 
 ?@raw(Raw_Text_With*Special_Characters__)
 
+Some arabic: @ar(سلام).
+
 How about some _strikethrough_ text, and some __strikethrough-bold__ text?
 and some ___strikethrough-italic___ text, and some ____strikethough-bold-italic____ text?
 
