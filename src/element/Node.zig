@@ -65,7 +65,7 @@ pub const L0Kind = enum(u8) {
     num_paren_item_text,
 
     // blockcommand section: @@commandname: // TODO!: for all special nodes, safety measures by type
-    img, // TODO size
+    img,
     header,
     footer,
     ar,
@@ -105,4 +105,6 @@ pub const L1Kind = enum(u8) {
     span,
     ar,
     raw,
+    datetime, // for under h1 in articles // TODO, should support the following styles:
+    // 1. YYYY-MM-DD, 2. YYYY-MM-DD HH:mm, 3. YYYY-MM-DD HH:mm:ss
 };

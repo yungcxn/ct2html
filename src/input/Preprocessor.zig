@@ -6,7 +6,7 @@ const ByteStream = @import("../ds/ByteStream.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 const crash = @import("../ErrorReporter.zig").crash;
 
-// @import("file") as long as there's no \ before @
+// @import(file) as long as there's no \ before @
 // if \, then command parsing skips it regardless, not adjustment needed
 
 // this returns an allocated dynbuf slice of the preprocessed text, nothing else

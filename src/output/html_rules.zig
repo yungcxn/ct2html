@@ -47,6 +47,7 @@ pub const datatable = hack.StructByteMap(.{
     .{ &.{Node.L0Kind.ar}, Rule.GenDef.def(.{ "<p dir=\"rtl\" lang=\"ar\">", "</p>" }) },
     .{ &.{Node.L0Kind.header}, Rule.GenDef.def(.{ "<header>", "</header>" }) },
     .{ &.{Node.L0Kind.footer}, Rule.GenDef.def(.{ "<footer>", "</footer>" }) },
+    // .{ &.{Node.L0Kind.datetime}, Rule.GenDef.def(&command_datetime) },
     // L1
     .{ &.{Node.L1Kind.inline_code}, Rule.GenDef.def(.{ "<code>", "</code>" }) },
 
@@ -95,6 +96,18 @@ fn head_sec(g: *Generator, _: ?@Vector(2, usize)) Generator.GenError!void {
     g.attributor.reset_cursor();
     g.print("</head>\n<body>");
 }
+
+// fn command_datetime(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void {
+//     if (span == null) crash(error.NullSpan);
+
+//     g.print("<time datetime=\"");
+//     g.print_span(span.?[0], span.?[1]);
+//     g.print("\">");
+
+//     const datetime_fmt: []u8 = g.textin[span.?[0]..span.?[1]];
+
+//     g.print("</time>");
+// }
 
 inline fn generic_anchored_heading(
     g: *Generator,
@@ -180,9 +193,9 @@ fn command_link(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void
 
     for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
         if (c == ',') {
-            g.print("<a href='");
+            g.print("<a href=\"");
             g.print_span(span.?[0], span.?[0] + i);
-            g.print("'>");
+            g.print("\">");
             g.print_span(span.?[0] + i + 1, span.?[1]);
             g.print("</a>");
             return;
@@ -199,24 +212,60 @@ fn command_link(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void
 fn command_img(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void {
     if (span == null) crash(error.NullSpan);
 
+    var commas: [2]usize = .{ 0, 0 };
+    var postcomma_argstarts: [2]usize = .{ 0, 0 };
+    var commac: usize = 0;
+    var last_c: usize = 0;
     for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
         if (c == ',') {
-            g.print("<figure><img src='");
-            g.print_span(span.?[0], span.?[0] + i);
-            g.print("' alt='");
-            g.print_span(span.?[0] + i + 1, span.?[1]);
-            g.print("'><figcaption>");
-            g.print_span(span.?[0] + i + 1, span.?[1]);
-            g.print("</figcaption></figure>");
-            return;
+            if (last_c == '\\') continue;
+
+            for (g.textin[span.?[0] + i + 1 .. span.?[1]], i + 1..) |c2, j| {
+                if (c2 != ' ' and c2 != '\t') {
+                    postcomma_argstarts[commac] = j;
+                    break;
+                }
+            }
+
+            commas[commac] = i;
+            commac += 1;
+            if (commac >= 2) break;
         }
+        last_c = c;
     }
 
-    g.print("<img src='");
-    g.print_span(span.?[0], span.?[1]);
-    g.print("' alt='");
-    g.print_span(span.?[0], span.?[1]);
-    g.print("'></figure>");
+    if (commac == 0) {
+        g.print("<img src=\"");
+        g.print_span(span.?[0], span.?[1]);
+        g.print("\" alt=\"");
+        g.print_span(span.?[0], span.?[1]);
+        g.print("\"></figure>");
+        return;
+    }
+
+    if (commac == 1) {
+        g.print("<figure><img src=\"");
+        g.print_span(span.?[0], span.?[0] + commas[0]);
+        g.print("\" alt=\"");
+        g.print_span(span.?[0] + postcomma_argstarts[0], span.?[1]);
+        g.print("\"><figcaption>");
+        g.print_span(span.?[0] + postcomma_argstarts[0], span.?[1]);
+        g.print("</figcaption></figure>");
+        return;
+    }
+
+    if (commac == 2) {
+        g.print("<figure><img src=\"");
+        g.print_span(span.?[0], span.?[0] + commas[0]);
+        g.print("\" style=\"width:");
+        g.print_span(span.?[0] + postcomma_argstarts[0], span.?[0] + commas[1]);
+        g.print("; height: auto;\" alt=\"");
+        g.print_span(span.?[0] + postcomma_argstarts[1], span.?[1]);
+        g.print("\"><figcaption>");
+        g.print_span(span.?[0] + postcomma_argstarts[1], span.?[1]);
+        g.print("</figcaption></figure>");
+        return;
+    }
 }
 
 fn command_div(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void {

@@ -90,6 +90,8 @@ The end before the end.
 
 Here I want @link(https://www.google.com) without a name,
 
+@@img:link, 50%, this is a caption.
+
 @link(https://www.google.com, with a name)...
 
 Here is some @raw(<div>raw html</div>) and some @raw(<span>inline raw html</span>).
