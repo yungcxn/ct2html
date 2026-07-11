@@ -58,3 +58,7 @@ test "chain importing with a dead end" {
 test "more complex css containing test" {
     try test_for_file("5_csstest.ct");
 }
+
+test "code block test" {
+    try test_for_file("6_code_block.ct");
+}

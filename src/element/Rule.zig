@@ -11,17 +11,19 @@ pub const L0Def = struct {
     parse: *const fn (*Parser, usize) Parser.ParsingError!ApplyFinalState,
     pre_node: ?Node.L0Kind = null,
     post_node: ?Node.L0Kind = null,
+    preserve_cursor: bool = false,
 
     pub const ApplyFinalState = enum(u8) {
         success,
         transitioned,
     };
 
-    pub fn def(comptime parse: anytype, comptime pre_node: ?Node.L0Kind, comptime post_node: ?Node.L0Kind) L0Def {
+    pub fn def(comptime parse: anytype, comptime pre_node: ?Node.L0Kind, comptime post_node: ?Node.L0Kind, comptime preserve_cursor: bool) L0Def {
         return .{
             .parse = parse,
             .pre_node = pre_node,
             .post_node = post_node,
+            .preserve_cursor = preserve_cursor,
         };
     }
 };

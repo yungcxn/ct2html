@@ -11,24 +11,22 @@ const L0SyntaxError = Parser.ParsingError.L0SyntaxError;
 const file_report = @import("../ErrorReporter.zig").file_report;
 const crash = @import("../ErrorReporter.zig").crash;
 
-// every func that is here registered may leave cursor anywhere
-
 pub const datatable = hack.StructByteMap(.{
-    .{ .{0}, Rule.L0Def.def(&par, null, null) },
-    .{ .{'\\'}, Rule.L0Def.def(&par, null, null) },
-    .{ .{'?'}, Rule.L0Def.def(&nonpar, null, null) },
-    .{ .{'#'}, Rule.L0Def.def(&heading, null, null) },
-    .{ .{'`'}, Rule.L0Def.def(&code_block, null, null) },
-    .{ .{'>'}, Rule.L0Def.def(&block_quote, null, null) },
-    .{ .{'-'}, Rule.L0Def.def(&dash_items, .unordered_list_begin, .unordered_list_end) },
+    .{ .{0}, Rule.L0Def.def(&par, null, null, false) },
+    .{ .{'\\'}, Rule.L0Def.def(&par, null, null, false) },
+    .{ .{'?'}, Rule.L0Def.def(&nonpar, null, null, false) },
+    .{ .{'#'}, Rule.L0Def.def(&heading, null, null, false) },
+    .{ .{'`'}, Rule.L0Def.def(&code_block, null, null, true) },
+    .{ .{'>'}, Rule.L0Def.def(&block_quote, null, null, false) },
+    .{ .{'-'}, Rule.L0Def.def(&dash_items, .unordered_list_begin, .unordered_list_end, false) },
 
-    .{ .{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, Rule.L0Def.def(&num_items, .ordered_list_begin, .ordered_list_end) },
+    .{ .{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, Rule.L0Def.def(&num_items, .ordered_list_begin, .ordered_list_end, false) },
 
-    .{ .{'@'}, Rule.L0Def.def(&blockcommand, null, null) },
+    .{ .{'@'}, Rule.L0Def.def(&blockcommand, null, null, false) },
 
     // this is special: head_anchor gets released, but attributes not. then later at generation,
     //   throught the attribute handler, some get written into it
-    .{ .{'!'}, Rule.L0Def.def(&attributes, .head_anchor, null) },
+    .{ .{'!'}, Rule.L0Def.def(&attributes, .head_anchor, null, false) },
 }).init();
 
 pub fn blockcommand(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
@@ -171,12 +169,14 @@ pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFin
     return .success;
 }
 
-// since having inline code at the start of a par block is not uncommon, we just pass to a par
-// if we only have a single backtick and could look for the l1 inline code in the next parser stage
+// since having inline code at the start of a par block is not uncommon,
+//   we just pass to a par. if we only have a single backtick and could look
+//   for the l1 inline code in the next parser stage.
+// we also need to advance past endat, since `code_block` is multi block
 pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const at_start = p.cursor;
     // cursor is assumed to be on the first backtick, begin counting
-    const backtick0_c = p.bounded_skipc('`', endat) catch {
+    const backtick0_c = p.skipc('`') catch {
         return p.e.file_report(L0SyntaxError, true, "Nothing after first batch of backticks", null);
     };
 
@@ -189,7 +189,7 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
     }
 
     const code_block0_at = p.cursor; // cursor is now on the first char after the 3 backticks
-    p.bounded_find('\n', endat) catch {
+    p.find('\n') catch {
         return p.e.file_report(L0SyntaxError, true, "Missing newline after code block meta line", null);
     };
 
@@ -199,7 +199,7 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
 
     var code_blockc: usize = 0;
     while (true) {
-        code_blockc += p.bounded_findc('`', endat) catch {
+        code_blockc += p.findc('`') catch {
             return p.e.file_report(L0SyntaxError, true, "Missing closing backticks for code block", null);
         };
         if (p.text[p.cursor - 1] == '\\') {
@@ -215,7 +215,7 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
 
     // cursor at first of closing backticks, count them until endat
     var backtick1_c: usize = 0;
-    while (p.bounded_peek(endat)) |c| {
+    while (p.peek()) |c| {
         if (c == '`') {
             backtick1_c += 1;
         } else {
@@ -229,17 +229,28 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
     if (backtick1_c != 3) {
         return p.e.file_report(L0SyntaxError, true, "Code block must end with 3 backticks", null);
     }
-    // cursor is on first char after the 3 last backticks, could be only whitespace... so skip
-    // if there was no text after the backticks in this block, just ignore it; we already exceeded
-    // the endat and won't produce anything.
-    p.bounded_skip_whitesp(endat) catch {};
-
-    if (p.cursor < endat) { // there is some text in the line of the last backticks, include all
-        p.l0nodes.push(.{
-            .kind = .code_block_header,
-            .span = .{ p.cursor, endat },
-            .contains_l1 = true,
-        });
+    // cursor is on first char after the 3 last backticks, could be only
+    // whitespace... skip inline-whitespace until newline or global file endat
+    var c_last: u8 = 0;
+    var header_start: usize = 0;
+    while (p.peek()) |c| : (p.inc()) {
+        if (c == '\n' and c_last == '\n') {
+            if (header_start != 0) {
+                p.l0nodes.push(.{
+                    .kind = .code_block_header,
+                    .span = .{ header_start, p.cursor - 1 },
+                    .contains_l1 = true,
+                });
+            }
+            p.inc();
+            break;
+        } else if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
+            c_last = c;
+            continue;
+        } else {
+            if (header_start == 0) header_start = p.cursor;
+        }
+        c_last = c;
     }
 
     p.l0nodes.push(.{

@@ -86,7 +86,7 @@ fn align_for_block(self: *@This()) ?usize {
 
 // assume that cursor is at the start of the block, and we do not need to set
 // cursor to some specific position afterwards
-fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError!void {
+fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError!bool {
     const l0_capture_c: u8 = self.peek().?;
 
     // cursor is at the first char of the block
@@ -117,6 +117,8 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
             );
         },
     }
+
+    return l0_ri.preserve_cursor;
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block
@@ -152,8 +154,10 @@ pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
 
     // l0 phase
     while (self.align_for_block()) |blockend| {
-        try self.parse_l0nodes_from_block(blockend); // testmode err propagation
-        self.cursor = blockend;
+        const preserve_cursor = try self.parse_l0nodes_from_block(blockend); // testmode err propagation
+        if (!preserve_cursor) {
+            self.cursor = blockend;
+        }
     }
 
     self.l0nodes.push(.{ .kind = .end, .span = null });
