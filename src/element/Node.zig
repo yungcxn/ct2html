@@ -14,8 +14,14 @@ pub const L0 = struct {
 pub const L1 = struct {
     kind: L1Kind,
     span: @Vector(2, usize), // mandatory, unlike above
-
     margin: @Vector(2, usize) = .{ 0, 0 },
+
+    // i like naming them different than the l0 vars for clarity improvement
+    //   but logically their the same
+    l1_in_l1child0: ?usize = null,
+    l1_in_l1childhead: ?usize = null,
+
+    l1_in_l1: bool = true,
 };
 
 pub const L0Kind = enum(u8) {

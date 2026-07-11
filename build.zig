@@ -11,8 +11,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.use_llvm = true;
-
     const i = b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = .{ .custom = "../" } } });
     b.getInstallStep().dependOn(&i.step);
 

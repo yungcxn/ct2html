@@ -69,7 +69,7 @@ pub const datatable = hack.StructByteMap(.{
 }).init();
 
 // for those attributes that get generated into the head section
-fn head_sec(g: *Generator, _: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
+fn head_sec(g: *Generator, _: *anyopaque) Generator.GenError!?@Vector(2, usize) {
     g.print("<head>");
 
     while (g.attributor.pop()) |l0node| {
@@ -111,9 +111,12 @@ fn head_sec(g: *Generator, _: ?@Vector(2, usize)) Generator.GenError!?@Vector(2,
 
 inline fn generic_pre_anchored_heading(
     g: *Generator,
-    span: ?@Vector(2, usize),
+    node: *anyopaque,
     headingnodekind: Node.L0Kind,
 ) Generator.GenError!?@Vector(2, usize) {
+    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
+    const span = realnode.span;
+
     if (span == null) crash(error.NullSpan);
 
     const anchorbuf: []u8 = g.alloc.alloc(u8, span.?[1] - span.?[0]) catch crash(error.OOM);
@@ -151,23 +154,26 @@ inline fn generic_pre_anchored_heading(
     return span;
 }
 
-fn pre_anchored_heading2(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
-    return generic_pre_anchored_heading(g, span, .heading2);
+fn pre_anchored_heading2(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    return generic_pre_anchored_heading(g, node, .heading2);
 }
-fn pre_anchored_heading3(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
-    return generic_pre_anchored_heading(g, span, .heading3);
+fn pre_anchored_heading3(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    return generic_pre_anchored_heading(g, node, .heading3);
 }
-fn pre_anchored_heading4(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
-    return generic_pre_anchored_heading(g, span, .heading4);
+fn pre_anchored_heading4(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    return generic_pre_anchored_heading(g, node, .heading4);
 }
-fn pre_anchored_heading5(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
-    return generic_pre_anchored_heading(g, span, .heading5);
+fn pre_anchored_heading5(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    return generic_pre_anchored_heading(g, node, .heading5);
 }
-fn pre_anchored_heading6(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
-    return generic_pre_anchored_heading(g, span, .heading6);
+fn pre_anchored_heading6(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    return generic_pre_anchored_heading(g, node, .heading6);
 }
 
-fn pre_command_link(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
+fn pre_command_link(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
+    const span = realnode.span;
+
     if (span == null) crash(error.NullSpan);
 
     for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
@@ -188,7 +194,10 @@ fn pre_command_link(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!
     return null; // nothing to inspect in the link
 }
 
-fn pre_command_img(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
+fn pre_command_img(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
+    const span = realnode.span;
+
     if (span == null) crash(error.NullSpan);
 
     var commas: [2]usize = .{ 0, 0 };
@@ -243,7 +252,10 @@ fn pre_command_img(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?
     unreachable;
 }
 
-fn post_command_img(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void {
+fn post_command_img(g: *Generator, node: *anyopaque) Generator.GenError!void {
+    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
+    const span = realnode.span;
+
     if (span == null) crash(error.NullSpan);
 
     var commas: [2]usize = .{ 0, 0 };
@@ -273,7 +285,10 @@ fn post_command_img(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!
     } // else nothing, since we already printed it.
 }
 
-fn pre_command_div(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
+fn pre_command_div(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
+    const span = realnode.span;
+
     if (span == null) crash(error.NullSpan);
 
     g.print("<div");
@@ -290,7 +305,10 @@ fn pre_command_div(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?
     return span;
 }
 
-fn pre_command_span(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
+fn pre_command_span(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
+    const span = realnode.span;
+
     if (span == null) crash(error.NullSpan);
 
     g.print("<span");
@@ -307,7 +325,10 @@ fn pre_command_span(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!
     return span;
 }
 
-fn pre_command_color(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
+fn pre_command_color(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
+    const span = realnode.span;
+
     if (span == null) crash(error.NullSpan);
 
     for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
@@ -322,7 +343,10 @@ fn pre_command_color(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError
     return g.e.file_report(Generator.GenError.InvalidL1Format, false, "Not of format: (<color>, <text>)", null);
 }
 
-fn pre_command_fs(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!?@Vector(2, usize) {
+fn pre_command_fs(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
+    const span = realnode.span;
+
     if (span == null) crash(error.NullSpan);
 
     for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {

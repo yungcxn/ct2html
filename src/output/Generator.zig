@@ -83,7 +83,7 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         switch (l0_ri.pre_alg) {
             .constant => |pre| self.print(pre),
             .complex => |f| {
-                l0span = try f(self, l0node.span);
+                l0span = try f(self, @ptrCast(@constCast(&l0node)));
             },
         }
 
@@ -95,29 +95,29 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         // post text and continue to the next l0
         if (toprint0 != null and l0node.l1childhead != null and l0node.l1child0 != null) {
             for (self.l1nodes.slice_view()[l0node.l1child0.?..l0node.l1childhead.?]) |l1node| {
-                var l1span: ?@Vector(2, usize) = l1node.span;
-                const l1margin: @Vector(2, usize) = l1node.margin;
-                self.print_span(toprint0.?, l1span.?[0] - l1margin[0]);
+                self.print_span(toprint0.?, l1node.span[0] - l1node.margin[0]);
 
                 const l1_ri = html_rules.datatable.lookup(
                     @intFromEnum(l1node.kind),
                 ) orelse return ErrorReporter.crash(GenError.NoL1RuleForKind);
 
+                var l1_inner_span: ?@Vector(2, usize) = l1node.span;
+
                 switch (l1_ri.pre_alg) {
                     .constant => |pre| self.print(pre),
                     .complex => |f| {
-                        l1span = try f(self, l1node.span);
+                        l1_inner_span = try f(self, @ptrCast(@constCast(&l1node)));
                     },
                 }
 
-                if (l1span != null) self.print_span(l1span.?[0], l1span.?[1]); // TODO
+                if (l1_inner_span != null) self.print_span(l1_inner_span.?[0], l1_inner_span.?[1]); // TODO
 
                 switch (l1_ri.post_alg) {
                     .constant => |post| self.print(post),
-                    .complex => |f| try f(self, l1node.span),
+                    .complex => |f| try f(self, @ptrCast(@constCast(&l1node))),
                 }
 
-                toprint0 = l1node.span[1] + l1margin[1]; // TODO NOTE: important: l1node.span != l1span
+                toprint0 = l1node.span[1] + l1node.margin[1];
             }
         }
 
@@ -130,7 +130,7 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         // post action
         switch (l0_ri.post_alg) {
             .constant => |post| self.print(post),
-            .complex => |f| try f(self, l0node.span),
+            .complex => |f| try f(self, @ptrCast(@constCast(&l0node))),
         }
     }
 

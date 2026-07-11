@@ -57,12 +57,12 @@ pub const GenDef = struct {
     // TODO pass node instead of span
     const GenPreFn = *const fn (
         g: *Generator,
-        span: ?@Vector(2, usize),
+        node: *anyopaque,
     ) Generator.GenError!?@Vector(2, usize);
 
     const GenPostFn = *const fn (
         g: *Generator,
-        span: ?@Vector(2, usize),
+        node: *anyopaque,
     ) Generator.GenError!void;
 
     pub fn def(pre: anytype, post: anytype) GenDef {
