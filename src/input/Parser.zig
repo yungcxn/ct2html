@@ -95,7 +95,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
         l0_rules.datatable.lookup(0).?;
 
     if (l0_ri.pre_node) |kind| self.l0nodes.push(
-        .{ .kind = kind, .span = null },
+        .{ .kind = kind, .span = null, .contains_l1 = false },
     );
 
     const l0_apply_state = try l0_ri.parse(self, blockend);
@@ -112,9 +112,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
             }
         },
         .success => if (l0_ri.post_node) |kind| {
-            self.l0nodes.push(
-                .{ .kind = kind, .span = null },
-            );
+            self.l0nodes.push(.{ .kind = kind, .span = null, .contains_l1 = false });
         },
     }
 
@@ -151,7 +149,7 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void
 }
 
 pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
-    self.l0nodes.push(.{ .kind = .begin, .span = null });
+    self.l0nodes.push(.{ .kind = .begin, .span = null, .contains_l1 = false });
 
     // l0 phase
     while (self.align_for_block()) |blockend| {
@@ -161,7 +159,7 @@ pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
         }
     }
 
-    self.l0nodes.push(.{ .kind = .end, .span = null });
+    self.l0nodes.push(.{ .kind = .end, .span = null, .contains_l1 = false });
 
     // l1 phase, reiterate over created l0 nodes
     for (self.l0nodes.slice_view()) |*node| {
@@ -177,8 +175,8 @@ pub fn debug_print(self: @This()) void {
         var text: []const u8 = "";
         if (node.span) |s| text = self.text[s[0]..s[1]];
         std.debug.print(
-            "{d}: {any} (children:{any}..{any})), (contains l1?{any}))\n   [{s}]\n\n",
-            .{ idx, node.kind, node.l1child0, node.l1childhead, node.contains_l1, text },
+            "{d}: {any} (children:{any}..{any})), (contains l1?{any}))\n   ({any})\n   [{s}]\n\n",
+            .{ idx, node.kind, node.l1child0, node.l1childhead, node.contains_l1, node.span, text },
         );
     }
 
@@ -186,8 +184,8 @@ pub fn debug_print(self: @This()) void {
     for (self.l1nodes.slice_view(), 0..) |node, idx| {
         const text: []const u8 = self.text[node.span[0]..node.span[1]];
         std.debug.print(
-            "{d}: {any} (margin:{any})\n   [{s}]\n\n",
-            .{ idx, node.kind, node.margin, text },
+            "{d}: {any} (margin:{any})\n   ({any})\n   [{s}]\n\n",
+            .{ idx, node.kind, node.margin, node.span, text },
         );
     }
 }
