@@ -41,28 +41,39 @@ pub const L1Def = struct {
 // Nodes carry not only the text boundary but for attributes or commands,
 // sometimes something more complex is needed, therefore a text returning fn
 pub const GenDef = struct {
-    algo: union(enum) {
-        text: []const u8,
-        prepost: struct { pre: []const u8, post: []const u8 },
+    pre_alg: GenPreAlg,
+    post_alg: GenPostAlg,
 
-        // only for l1:
-        print: *const fn (g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void,
-    },
+    const GenPreAlg = union(enum) {
+        constant: []const u8,
+        complex: GenPreFn,
+    };
 
-    pub fn def(algoval: anytype) GenDef {
-        return GenDef{
-            .algo = switch (@typeInfo(@TypeOf(algoval))) {
-                .pointer => |p| switch (@typeInfo(p.child)) {
-                    .@"fn" => .{ .print = algoval },
-                    .array => .{ .text = algoval },
-                    else => @compileError("Invalid algoval type for Gen: " ++
-                        @typeName(@TypeOf(algoval))),
-                },
-                .@"struct" => .{ .prepost = .{
-                    .pre = algoval[0],
-                    .post = algoval[1],
-                } },
-                else => @compileError("Invalid algoval type for Gen"),
+    const GenPostAlg = union(enum) {
+        constant: []const u8,
+        complex: GenPostFn,
+    };
+
+    // TODO pass node instead of span
+    const GenPreFn = *const fn (
+        g: *Generator,
+        span: ?@Vector(2, usize),
+    ) Generator.GenError!?@Vector(2, usize);
+
+    const GenPostFn = *const fn (
+        g: *Generator,
+        span: ?@Vector(2, usize),
+    ) Generator.GenError!void;
+
+    pub fn def(pre: anytype, post: anytype) GenDef {
+        return .{
+            .pre_alg = switch (@TypeOf(pre)) {
+                GenPreFn => .{ .complex = pre },
+                else => .{ .constant = pre },
+            },
+            .post_alg = switch (@TypeOf(post)) {
+                GenPostFn => .{ .complex = post },
+                else => .{ .constant = post },
             },
         };
     }

@@ -127,6 +127,7 @@ fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void
     // assume span exists
     self.cursor = l0node.span.?[0];
     const node_end = l0node.span.?[1];
+    // we run through the text span of the l0 node TODO
     while (self.bounded_pop(node_end)) |c| {
         if (c == '\\') {
             _ = self.bounded_pop(node_end); // skip escaped char
