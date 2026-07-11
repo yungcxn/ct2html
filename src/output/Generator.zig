@@ -12,6 +12,7 @@ pub const GenError = error{
     NoL1RuleForKind,
     UnsupportedL0RuleAlgo,
     UnnecessaryNodePresented,
+    InvalidL1Format,
 };
 
 alloc: std.mem.Allocator, // for rule functions to alloc and dealloc, not directly for @This()

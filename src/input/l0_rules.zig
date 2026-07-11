@@ -35,7 +35,7 @@ pub fn blockcommand(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.App
     const start = p.cursor;
     // we assume we are on '@'
     const atc: usize = p.skipc('@') catch {
-        return p.e.file_report(error.L0SyntaxError, true, "Nothing after @ for blockcommand", null);
+        return p.e.file_report(L0SyntaxError, true, "Nothing after @ for blockcommand", null);
     };
 
     if (atc != 2) {
@@ -48,17 +48,17 @@ pub fn blockcommand(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.App
     const blockcmd_name_start = p.cursor;
 
     p.bounded_find(':', endat) catch {
-        return p.e.file_report(error.L0SyntaxError, true, "Missing colon after blockcommand name", null);
+        return p.e.file_report(L0SyntaxError, true, "Missing colon after blockcommand name", null);
     };
 
     // cursor is on ':', so we check if the blockcommand name is free of whitespace
     if (!p.bounds_freeof_whitesp(blockcmd_name_start, p.cursor)) {
-        return p.e.file_report(error.L0SyntaxError, true, "Space between blockcommand name and colon", null);
+        return p.e.file_report(L0SyntaxError, true, "Space between blockcommand name and colon", null);
     }
 
     const blockcmd_name = p.text[blockcmd_name_start..p.cursor];
     const blockcmd_kind = std.meta.stringToEnum(Node.L0Kind, blockcmd_name) orelse {
-        return p.e.file_report(error.L0SyntaxError, true, "Unknown blockcommand name", null);
+        return p.e.file_report(L0SyntaxError, true, "Unknown blockcommand name", null);
     };
 
     // cursor is at ':'...
@@ -78,23 +78,23 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
     // we assume we are on '!'
     line: while (p.pop() == '!') {
         p.bounded_skip_whitesp(endat) catch {
-            return p.e.file_report(error.L0SyntaxError, true, "Empty attribute key", null);
+            return p.e.file_report(L0SyntaxError, true, "Empty attribute key", null);
         };
 
         const key_start = p.cursor;
 
         p.bounded_find(':', endat) catch {
-            return p.e.file_report(error.L0SyntaxError, true, "Missing colon in attribute", null);
+            return p.e.file_report(L0SyntaxError, true, "Missing colon in attribute", null);
         };
 
         // cursor is on ':', so we check if the keyname is free of whitespace
         if (!p.bounds_freeof_whitesp(key_start, p.cursor)) {
-            return p.e.file_report(error.L0SyntaxError, true, "Space between key and colon not allowed", null);
+            return p.e.file_report(L0SyntaxError, true, "Space between key and colon not allowed", null);
         }
 
         const attr_name = p.text[key_start..p.cursor];
         const attr_kind = std.meta.stringToEnum(Node.L0Kind, attr_name) orelse {
-            return p.e.file_report(error.L0SyntaxError, true, "Unknown attribute name", null);
+            return p.e.file_report(L0SyntaxError, true, "Unknown attribute name", null);
         };
 
         // cursor is at ':'...
@@ -103,7 +103,7 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
 
         // advance till value start
         p.bounded_skip_whitesp(endat) catch {
-            return p.e.file_report(error.L0SyntaxError, true, "Missing value in attribute", attr_kind);
+            return p.e.file_report(L0SyntaxError, true, "Missing value in attribute", attr_kind);
         };
 
         const value_start = p.cursor;
@@ -118,7 +118,7 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
                 });
                 break :line;
             } else {
-                return p.e.file_report(error.L0SyntaxError, true, "Missing value in attribute", attr_kind);
+                return p.e.file_report(L0SyntaxError, true, "Missing value in attribute", attr_kind);
             }
         };
 
@@ -138,7 +138,7 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
 // read #'s
 pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const hashtagc: usize = p.skipc('#') catch {
-        return p.e.file_report(error.L0SyntaxError, true, "Nothing after heading hashtags", null);
+        return p.e.file_report(L0SyntaxError, true, "Nothing after heading hashtags", null);
     };
 
     const kind: Node.L0Kind = switch (hashtagc) {
@@ -149,22 +149,22 @@ pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFin
         5 => .heading5,
         6 => .heading6,
         else => {
-            return p.e.file_report(error.L0SyntaxError, true, "Too many heading hashtags", null);
+            return p.e.file_report(L0SyntaxError, true, "Too many heading hashtags", null);
         },
     };
 
     p.bounded_skip_whitesp(endat) catch {
-        return p.e.file_report(error.L0SyntaxError, true, "Nothing after heading hashtags", null);
+        return p.e.file_report(L0SyntaxError, true, "Nothing after heading hashtags", null);
     };
 
     // cursor is now at the first char of the heading text, and stays there
     if (!p.bounds_freeof(p.cursor, endat, '\n')) {
-        return p.e.file_report(error.L0SyntaxError, true, "Newline in heading", kind);
+        return p.e.file_report(L0SyntaxError, true, "Newline in heading", kind);
     }
 
     // cursor is now at the first char of the heading text, and stays there
     if (!p.bounds_freeof(p.cursor, endat, '\n')) {
-        return p.e.file_report(error.L0SyntaxError, true, "Newline in heading", kind);
+        return p.e.file_report(L0SyntaxError, true, "Newline in heading", kind);
     }
 
     p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat }, .contains_l1 = false });
@@ -177,7 +177,7 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
     const at_start = p.cursor;
     // cursor is assumed to be on the first backtick, begin counting
     const backtick0_c = p.bounded_skipc('`', endat) catch {
-        return p.e.file_report(error.L0SyntaxError, true, "Nothing after first batch of backticks", null);
+        return p.e.file_report(L0SyntaxError, true, "Nothing after first batch of backticks", null);
     };
 
     if (backtick0_c == 1) { // the fallback that was mentioned above
@@ -185,12 +185,12 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
         _ = par(p, endat) catch |err| return err;
         return .transitioned;
     } else if (backtick0_c != 3) {
-        return p.e.file_report(error.L0SyntaxError, true, "Code block must start with 3 backticks", null);
+        return p.e.file_report(L0SyntaxError, true, "Code block must start with 3 backticks", null);
     }
 
     const code_block0_at = p.cursor; // cursor is now on the first char after the 3 backticks
     p.bounded_find('\n', endat) catch {
-        return p.e.file_report(error.L0SyntaxError, true, "Missing newline after code block meta line", null);
+        return p.e.file_report(L0SyntaxError, true, "Missing newline after code block meta line", null);
     };
 
     const code_block_meta_span: @Vector(2, usize) = .{ code_block0_at, p.cursor };
@@ -200,7 +200,7 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
     var code_blockc: usize = 0;
     while (true) {
         code_blockc += p.bounded_findc('`', endat) catch {
-            return p.e.file_report(error.L0SyntaxError, true, "Missing closing backticks for code block", null);
+            return p.e.file_report(L0SyntaxError, true, "Missing closing backticks for code block", null);
         };
         if (p.text[p.cursor - 1] == '\\') {
             code_blockc += 1;
@@ -227,7 +227,7 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
     // there could be still text after the closing batch of backticks
 
     if (backtick1_c != 3) {
-        return p.e.file_report(error.L0SyntaxError, true, "Code block must end with 3 backticks", null);
+        return p.e.file_report(L0SyntaxError, true, "Code block must end with 3 backticks", null);
     }
     // cursor is on first char after the 3 last backticks, could be only whitespace... so skip
     // if there was no text after the backticks in this block, just ignore it; we already exceeded
@@ -261,7 +261,7 @@ pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
     outer: while (true) {
         p.inc(); // skip '-'
         p.bounded_skip_whitesp(endat) catch {
-            return p.e.file_report(error.L0SyntaxError, true, "Empty item", Node.L0Kind.dash_item);
+            return p.e.file_report(L0SyntaxError, true, "Empty item", Node.L0Kind.dash_item);
         };
 
         // now we're at the item text begin
@@ -281,7 +281,7 @@ pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
             if (c != '\n') continue;
 
             switch (p.peek() orelse {
-                return p.e.file_report(error.L0SyntaxError, true, "Empty item", Node.L0Kind.dash_item);
+                return p.e.file_report(L0SyntaxError, true, "Empty item", Node.L0Kind.dash_item);
             }) {
                 ' ', '\t' => {
                     // through this condition, we allow the next line to be
@@ -301,7 +301,7 @@ pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
                     // in this case we forbid something like this:
                     // \\- this-is-some\n
                     // \\unindented-text
-                    return p.e.file_report(error.L0SyntaxError, true, "Unindented line after dash item", Node.L0Kind.dash_item);
+                    return p.e.file_report(L0SyntaxError, true, "Unindented line after dash item", Node.L0Kind.dash_item);
                 },
             }
         }
@@ -316,12 +316,12 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyF
         // first: the label, we exit this block on cursor being sep +1
         {
             const labelc = p.bounded_findc(sep_set, endat) catch {
-                return p.e.file_report(error.L0SyntaxError, true, "Not a number before separator", Node.L0Kind.num_dot_item_label);
+                return p.e.file_report(L0SyntaxError, true, "Not a number before separator", Node.L0Kind.num_dot_item_label);
             };
             //cursor is on sep
 
             if (!p.bounds_freeof_whitesp(p.cursor - labelc, p.cursor)) {
-                return p.e.file_report(error.L0SyntaxError, true, "Space in label not allowed", Node.L0Kind.num_dot_item_label);
+                return p.e.file_report(L0SyntaxError, true, "Space in label not allowed", Node.L0Kind.num_dot_item_label);
             }
 
             // we are still on the sep, e.g. '.'
@@ -342,7 +342,7 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyF
         // second: the text, and we start with cursor on sep +1
         {
             p.bounded_skip_whitesp(endat) catch {
-                return p.e.file_report(error.L0SyntaxError, true, "Nothing after separator", Node.L0Kind.num_dot_item_text);
+                return p.e.file_report(L0SyntaxError, true, "Nothing after separator", Node.L0Kind.num_dot_item_text);
             };
 
             const text_start = p.cursor;
@@ -361,7 +361,7 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyF
                 if (c != '\n') continue;
 
                 switch (p.peek() orelse {
-                    return p.e.file_report(error.L0SyntaxError, true, "Nothing after separator", Node.L0Kind.num_dot_item_text);
+                    return p.e.file_report(L0SyntaxError, true, "Nothing after separator", Node.L0Kind.num_dot_item_text);
                 }) {
                     ' ', '\t' => {
                         // through this condition, we allow the next line to be
@@ -381,7 +381,7 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyF
                         // in this case we forbid something like this:
                         // \\1. this-is-some\n
                         // \\unindented-text
-                        return p.e.file_report(error.L0SyntaxError, true, "Unindented line after number item", Node.L0Kind.num_dot_item_text);
+                        return p.e.file_report(L0SyntaxError, true, "Unindented line after number item", Node.L0Kind.num_dot_item_text);
                     },
                 }
             }
@@ -392,7 +392,7 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyF
 
 pub fn block_quote(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const quotec = p.skipc('>') catch {
-        return p.e.file_report(error.L0SyntaxError, true, "Nothing after block quote", Node.L0Kind.quote_block);
+        return p.e.file_report(L0SyntaxError, true, "Nothing after block quote", Node.L0Kind.quote_block);
     };
 
     const kind: Node.L0Kind = switch (quotec) {
@@ -401,7 +401,7 @@ pub fn block_quote(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Appl
         3 => .italic_quote_block,
         4 => .bold_italic_quote_block,
         else => {
-            return p.e.file_report(error.L0SyntaxError, true, "Too many block quote chars", Node.L0Kind.quote_block);
+            return p.e.file_report(L0SyntaxError, true, "Too many block quote chars", Node.L0Kind.quote_block);
         },
     };
 

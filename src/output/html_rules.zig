@@ -45,6 +45,8 @@ pub const datatable = hack.StructByteMap(.{
     .{ &.{Node.L0Kind.img}, Rule.GenDef.def(&command_img) },
     .{ &.{Node.L0Kind.script}, Rule.GenDef.def(.{ "<script src=\"", "\"></script>" }) },
     .{ &.{Node.L0Kind.ar}, Rule.GenDef.def(.{ "<p dir=\"rtl\" lang=\"ar\">", "</p>" }) },
+    .{ &.{Node.L0Kind.header}, Rule.GenDef.def(.{ "<header>", "</header>" }) },
+    .{ &.{Node.L0Kind.footer}, Rule.GenDef.def(.{ "<footer>", "</footer>" }) },
     // L1
     .{ &.{Node.L1Kind.inline_code}, Rule.GenDef.def(.{ "<code>", "</code>" }) },
 
@@ -60,6 +62,10 @@ pub const datatable = hack.StructByteMap(.{
     .{ &.{Node.L1Kind.link}, Rule.GenDef.def(&command_link) },
     .{ &.{Node.L1Kind.raw}, Rule.GenDef.def(.{ "", "" }) }, // just passed through
     .{ &.{Node.L1Kind.ar}, Rule.GenDef.def(.{ "<span dir=\"rtl\" lang=\"ar\">", "</span>" }) },
+    .{ &.{Node.L1Kind.div}, Rule.GenDef.def(&command_div) },
+    .{ &.{Node.L1Kind.span}, Rule.GenDef.def(&command_span) },
+    .{ &.{Node.L1Kind.color}, Rule.GenDef.def(&command_color) },
+    .{ &.{Node.L1Kind.fs}, Rule.GenDef.def(&command_fs) },
 }).init();
 
 // for those attributes that get generated into the head section
@@ -211,4 +217,78 @@ fn command_img(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void 
     g.print("' alt='");
     g.print_span(span.?[0], span.?[1]);
     g.print("'></figure>");
+}
+
+fn command_div(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void {
+    if (span == null) crash(error.NullSpan);
+
+    g.print("<div");
+
+    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
+        if (c == ',') { // class string
+            g.print(" class=\"");
+            g.print_span(span.?[0], span.?[0] + i);
+            g.print("\">");
+            g.print_span(span.?[0] + i + 1, span.?[1]);
+            g.print("</div>");
+            return;
+        }
+    }
+    g.print(">");
+    g.print_span(span.?[0], span.?[1]);
+    g.print("</div>");
+}
+
+fn command_span(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void {
+    if (span == null) crash(error.NullSpan);
+
+    g.print("<span");
+
+    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
+        if (c == ',') { // class string
+            g.print(" class=\"");
+            g.print_span(span.?[0], span.?[0] + i);
+            g.print("\">");
+            g.print_span(span.?[0] + i + 1, span.?[1]);
+            g.print("</span>");
+            return;
+        }
+    }
+    g.print(">");
+    g.print_span(span.?[0], span.?[1]);
+    g.print("</span>");
+}
+
+fn command_color(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void {
+    if (span == null) crash(error.NullSpan);
+
+    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
+        if (c == ',') { // color
+            g.print("<span style=\"color: ");
+            g.print_span(span.?[0], span.?[0] + i);
+            g.print(";\">");
+            g.print_span(span.?[0] + i + 1, span.?[1]);
+            g.print("</span>");
+            return;
+        }
+    }
+
+    return g.e.file_report(Generator.GenError.InvalidL1Format, false, "Not of format: (<color>, <text>)", null);
+}
+
+fn command_fs(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void {
+    if (span == null) crash(error.NullSpan);
+
+    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
+        if (c == ',') { // font size
+            g.print("<span style=\"font-size: ");
+            g.print_span(span.?[0], span.?[0] + i);
+            g.print(";\">");
+            g.print_span(span.?[0] + i + 1, span.?[1]);
+            g.print("</span>");
+            return;
+        }
+    }
+
+    return g.e.file_report(Generator.GenError.InvalidL1Format, false, "Not of format: (<font-size>, <text>)", null);
 }

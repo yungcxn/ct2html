@@ -66,8 +66,8 @@ pub const L0Kind = enum(u8) {
 
     // blockcommand section: @@commandname: // TODO!: for all special nodes, safety measures by type
     img, // TODO size
-    header, // TODO
-    footer, // TODO
+    header,
+    footer,
     ar,
 
     // attribute section
@@ -99,12 +99,10 @@ pub const L1Kind = enum(u8) {
 
     // inline command section: @command(...)
     link,
-    big, // TODO!
-    small, // TODO!
-    relsize, // TODO!
-    color, // TODO!
-    div, // TODO!
-    span, // TODO!
+    fs, // font-size
+    color,
+    div,
+    span,
     ar,
     raw,
 };

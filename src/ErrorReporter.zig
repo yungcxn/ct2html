@@ -77,7 +77,7 @@ pub fn file_report(
     err: anytype,
     from_text: bool,
     texthint: anytype,
-    node_or_kind: anytype,
+    node_or_kind: anytype, // TODO kann das weg?!
 ) @TypeOf(err) {
     self.err_reported = true;
     const report = Report{
