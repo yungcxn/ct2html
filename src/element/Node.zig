@@ -71,7 +71,7 @@ pub const L0Kind = enum(u8) {
     num_paren_item_text,
 
     // blockcommand section: @@commandname: // TODO!: for all special nodes, safety measures by type
-    img,
+    img, // TODO ALSO HERE! LIKE BELOW
     header,
     footer,
     ar,
@@ -104,13 +104,29 @@ pub const L1Kind = enum(u8) {
     math, // TODO with $
 
     // inline command section: @command(...)
-    link,
-    fs, // font-size
-    color,
-    div,
-    span,
-    ar,
-    raw,
-    datetime, // for under h1 in articles // TODO, should support the following styles:
+    // no overloading!
+    // we do not push command node wrappers around args since they cost for nothing
+    cmd_rawlink_1arg_url,
+
+    cmd_link_2arg_0_url,
+    cmd_link_2arg_1_displayname,
+
+    cmd_fs_2arg_0_size, // font-size
+    cmd_fs_2arg_1_text,
+
+    cmd_color_2arg_0_color,
+    cmd_color_2arg_1_text,
+
+    cmd_div_2arg_0_class,
+    cmd_div_2arg_1_text,
+
+    cmd_span_2arg_0_class,
+    cmd_span_2arg_1_text,
+
+    cmd_ar_1arg_text,
+    cmd_raw_1arg_bytes,
+    // datetime,
+    // for under h1 in articles
+    // TODO, should support the following styles:
     // 1. YYYY-MM-DD, 2. YYYY-MM-DD HH:mm, 3. YYYY-MM-DD HH:mm:ss
 };

@@ -121,7 +121,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
 
 // assume cursor is at the start of the block, and blockend is the end of the block
 // but cursor must be preserved after each func since it may move if the rule needs the cursor to
-fn parse_l1_in_l0node(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void {
+fn parse_all_l1s(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void {
     // assume span exists
     self.cursor = l0node.span.?[0];
     const node_end = l0node.span.?[1];
@@ -164,7 +164,7 @@ pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
     // l1 phase, reiterate over created l0 nodes
     for (self.l0nodes.slice_view()) |*node| {
         if (node.contains_l1 and node.span != null) {
-            try self.parse_l1_in_l0node(node); // err progapation here aswell
+            try self.parse_all_l1s(node); // err progapation here aswell
         }
     }
 }
