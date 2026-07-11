@@ -6,12 +6,11 @@ const Rule = @import("../element/Rule.zig");
 const Parser = @import("Parser.zig");
 const hack = @import("../hack.zig");
 const L1SyntaxError = Parser.ParsingError.L1SyntaxError;
-const force_tup = @import("../hack.zig").force_tup;
 const file_report = @import("../ErrorReporter.zig").file_report;
 
 pub const datatable = hack.StructByteMap(.{
-    .{ &.{'@'}, Rule.L1Def.def(&command) },
-    capture_def(&.{'`'}, .inline_code),
+    .{ .{'@'}, Rule.L1Def.def(&command) },
+    capture_def(&.{'`'}, .{.inline_code}),
     capture_def(&.{'*'}, .{ .bold, .italic, .bold_italic }),
     capture_def(&.{'_'}, .{ .strikethrough, .strikethrough_bold, .strikethrough_italic, .strikethrough_bold_italic }),
 }).init();
@@ -37,7 +36,7 @@ fn capture_def(
                 const text_start = p.cursor;
 
                 var level: ?Node.L1Kind = null;
-                inline for (force_tup(node_levels), 1..) |lk, idx| {
+                inline for (node_levels, 1..) |lk, idx| {
                     if (capturec == idx) {
                         level = lk;
                     }

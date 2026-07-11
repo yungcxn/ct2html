@@ -11,16 +11,6 @@ fn max_enum_val(comptime E: type) comptime_int {
     return max;
 }
 
-pub fn force_tup(maybe_tuple: anytype) switch (@typeInfo(@TypeOf(maybe_tuple))) {
-    .@"struct" => @TypeOf(maybe_tuple),
-    else => @Tuple(&.{@TypeOf(maybe_tuple)}),
-} {
-    return switch (@typeInfo(@TypeOf(maybe_tuple))) {
-        .@"struct" => maybe_tuple,
-        else => .{maybe_tuple},
-    };
-}
-
 // @TypeOf(key_val_table[0]) = struct {
 //     @"0": []u8,
 //     @"1": V,
