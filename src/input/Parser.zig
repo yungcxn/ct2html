@@ -8,6 +8,7 @@ const l1_rules = @import("l1_rules.zig");
 const Attributor = @import("../internal/Attributor.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 
+// TODO errors should be way more detailed than this
 pub const ParsingError = error{
     L0SyntaxError,
     L1SyntaxError,

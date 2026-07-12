@@ -11,6 +11,8 @@ parser: ?*Parser = null,
 htmlmode: bool = false,
 responsemode: bool = false,
 
+// TODO rework error reporting, passing this around and throwing through report is fucked
+
 pub fn init(
     alloc: std.mem.Allocator,
     io: std.Io,

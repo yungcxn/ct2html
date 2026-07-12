@@ -5,6 +5,7 @@ const Node = @import("../element/Node.zig");
 const Parser = @import("Parser.zig");
 const Rule = @import("../element/Rule.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
+const CommandEngine = @import("../internal/CommandEngine.zig");
 const hack = @import("../hack.zig");
 
 const L0SyntaxError = Parser.ParsingError.L0SyntaxError;
@@ -20,59 +21,26 @@ pub const datatable = hack.StructByteMap(.{
     .{ .{'>'}, Rule.L0Def.def(&block_quote, null, null, false) },
     .{ .{'-'}, Rule.L0Def.def(&dash_items, .unordered_list_begin, .unordered_list_end, false) },
 
-    .{ .{ '1', '2', '3', '4', '5', '6', '7', '8', '9' }, Rule.L0Def.def(&num_items, .ordered_list_begin, .ordered_list_end, false) },
+    .{ .{
+        '1',
+        '2',
+        '3',
+        '4',
+        '5',
+        '6',
+        '7',
+        '8',
+        '9',
+    }, Rule.L0Def.def(&num_items, .ordered_list_begin, .ordered_list_end, false) },
 
-    .{ .{'@'}, Rule.L0Def.def(&blockcommand, null, null, false) },
+    .{ .{'@'}, Rule.L0Def.def(&CommandEngine.parse_block_command, null, null, false) },
 
     // this is special: head_anchor gets released, but attributes not. then later at generation,
     //   throught the attribute handler, some get written into it
     .{ .{'!'}, Rule.L0Def.def(&attributes, .head_anchor, null, false) },
 }).init();
 
-pub fn blockcommand(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
-    const start = p.cursor;
-    // we assume we are on '@'
-    const atc: usize = p.skipc('@') catch {
-        return p.e.file_report(L0SyntaxError, true, "Nothing after @ for blockcommand", null);
-    };
-
-    if (atc != 2) {
-        // just do a par out of this, since it could be a usual @command() at the start of a par
-        p.cursor = start;
-        _ = par(p, endat) catch |err| return err;
-        return .transitioned;
-    }
-
-    const blockcmd_name_start = p.cursor;
-
-    p.bounded_find(':', endat) catch {
-        return p.e.file_report(L0SyntaxError, true, "Missing colon after blockcommand name", null);
-    };
-
-    // cursor is on ':', so we check if the blockcommand name is free of whitespace
-    if (!p.bounds_freeof_whitesp(blockcmd_name_start, p.cursor)) {
-        return p.e.file_report(L0SyntaxError, true, "Space between blockcommand name and colon", null);
-    }
-
-    const blockcmd_name = p.text[blockcmd_name_start..p.cursor];
-    const blockcmd_kind = std.meta.stringToEnum(Node.L0Kind, blockcmd_name) orelse {
-        return p.e.file_report(L0SyntaxError, true, "Unknown blockcommand name", null);
-    };
-
-    // cursor is at ':'...
-    p.inc();
-    // ...now at first char of value
-
-    p.l0nodes.push(.{
-        .kind = blockcmd_kind,
-        .span = .{ p.cursor, endat },
-        .contains_l1 = true,
-    });
-
-    return .success;
-}
-
-pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     // we assume we are on '!'
     line: while (p.pop() == '!') {
         p.bounded_skip_whitesp(endat) catch {
@@ -134,7 +102,7 @@ pub fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
 }
 
 // read #'s
-pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const hashtagc: usize = p.skipc('#') catch {
         return p.e.file_report(L0SyntaxError, true, "Nothing after heading hashtags", null);
     };
@@ -173,7 +141,7 @@ pub fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFin
 //   we just pass to a par. if we only have a single backtick and could look
 //   for the l1 inline code in the next parser stage.
 // we also need to advance past endat, since `code_block` is multi block
-pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const at_start = p.cursor;
     // cursor is assumed to be on the first backtick, begin counting
     const backtick0_c = p.skipc('`') catch {
@@ -268,7 +236,7 @@ pub fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
     return .success;
 }
 
-pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     outer: while (true) {
         p.inc(); // skip '-'
         p.bounded_skip_whitesp(endat) catch {
@@ -320,7 +288,7 @@ pub fn dash_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.Apply
     return .success;
 }
 
-pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const sep_set = .{ '.', ')' };
     outer: while (true) {
 
@@ -401,7 +369,7 @@ pub fn num_items(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyF
     return .success;
 }
 
-pub fn block_quote(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+fn block_quote(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const quotec = p.skipc('>') catch {
         return p.e.file_report(L0SyntaxError, true, "Nothing after block quote", Node.L0Kind.quote_block);
     };
@@ -428,7 +396,7 @@ pub fn par(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalSt
     return .success;
 }
 
-pub fn nonpar(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+fn nonpar(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     p.l0nodes.push(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat }, .contains_l1 = true });
 
     return .success;
