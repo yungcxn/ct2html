@@ -12,6 +12,7 @@ const ErrorReporter = @import("../ErrorReporter.zig");
 pub const ParsingError = error{
     L0SyntaxError,
     L1SyntaxError,
+    CommandSyntaxError,
     EOF,
     OutOfBounds,
 };

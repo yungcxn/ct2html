@@ -59,18 +59,18 @@ pub const datatable = hack.StructByteMap(.{
     .{ .{Node.L1Kind.strikethrough_bold}, Rule.GenDef.def("<del><strong>", "</strong></del>") },
     .{ .{Node.L1Kind.strikethrough_italic}, Rule.GenDef.def("<del><em>", "</em></del>") },
     .{ .{Node.L1Kind.strikethrough_bold_italic}, Rule.GenDef.def("<del><strong><em>", "</em></strong></del>") },
-    .{ .{Node.L1Kind.cmd_raw_1arg_bytes}, Rule.GenDef.def("", "") }, // just passed through
-    .{ .{Node.L1Kind.cmd_link_2arg_0_url}, Rule.GenDef.def("<a href=\"", "\">") },
-    .{ .{Node.L1Kind.cmd_link_2arg_1_displayname}, Rule.GenDef.def("", "</a>") },
-    .{ .{Node.L1Kind.cmd_ar_1arg_text}, Rule.GenDef.def("<span dir=\"rtl\" lang=\"ar\">", "</span>") },
-    .{ .{Node.L1Kind.cmd_div_2arg_0_class}, Rule.GenDef.def("<div class=\"", "\">") },
-    .{ .{Node.L1Kind.cmd_div_2arg_1_text}, Rule.GenDef.def("", "</div>") },
-    .{ .{Node.L1Kind.cmd_span_2arg_0_class}, Rule.GenDef.def("<span class=\"", "\">") },
-    .{ .{Node.L1Kind.cmd_span_2arg_1_text}, Rule.GenDef.def("", "</span>") },
-    .{ .{Node.L1Kind.cmd_color_2arg_0_color}, Rule.GenDef.def("<span style=\"color: ", "\">") },
-    .{ .{Node.L1Kind.cmd_color_2arg_1_text}, Rule.GenDef.def("", "</span>") },
-    .{ .{Node.L1Kind.cmd_fs_2arg_0_size}, Rule.GenDef.def("<span style=\"font-size: ", "\">") },
-    .{ .{Node.L1Kind.cmd_fs_2arg_1_text}, Rule.GenDef.def("", "</span>") },
+    .{ .{Node.L1Kind.inl_cmd_raw_text}, Rule.GenDef.def("", "") }, // just passed through
+    .{ .{Node.L1Kind.inl_cmd_link_0url}, Rule.GenDef.def("<a href=\"", "\">") },
+    .{ .{Node.L1Kind.inl_cmd_link_1displayname}, Rule.GenDef.def("", "</a>") },
+    .{ .{Node.L1Kind.inl_cmd_ar_text}, Rule.GenDef.def("<span dir=\"rtl\" lang=\"ar\">", "</span>") },
+    .{ .{Node.L1Kind.inl_cmd_div_0class}, Rule.GenDef.def("<div class=\"", "\">") },
+    .{ .{Node.L1Kind.inl_cmd_div_1text}, Rule.GenDef.def("", "</div>") },
+    .{ .{Node.L1Kind.inl_cmd_span_0class}, Rule.GenDef.def("<span class=\"", "\">") },
+    .{ .{Node.L1Kind.inl_cmd_span_1text}, Rule.GenDef.def("", "</span>") },
+    .{ .{Node.L1Kind.inl_cmd_color_0color}, Rule.GenDef.def("<span style=\"color: ", "\">") },
+    .{ .{Node.L1Kind.inl_cmd_color_1text}, Rule.GenDef.def("", "</span>") },
+    .{ .{Node.L1Kind.inl_cmd_fs_0size}, Rule.GenDef.def("<span style=\"font-size: ", "\">") },
+    .{ .{Node.L1Kind.inl_cmd_fs_1text}, Rule.GenDef.def("", "</span>") },
 }).init();
 
 // for those attributes that get generated into the head section

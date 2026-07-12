@@ -71,14 +71,19 @@ pub const L0Kind = enum(u8) {
     num_paren_item_text,
 
     // blockcommand section: @@commandname: // TODO!: for all special nodes, safety measures by type
-    img, // TODO ALSO HERE! LIKE BELOW
-    header,
-    footer,
-    ar,
+    blk_cmd_img_0src,
+    blk_cmd_img_1size,
+    blk_cmd_img_2caption,
+
+    blk_cmd_header_text,
+    blk_cmd_footer_text,
+    blk_cmd_ar_text,
+    blk_cmd_style_link,
+    blk_cmd_script_link,
 
     // attribute section
-    style, // also a blockcommand
-    script, // also a blockcommand
+    style, // in head tag, unlike above
+    script, // in head tag, unline above
     title,
     heading_icon,
     abbreviation_def, // TODO!
@@ -103,28 +108,28 @@ pub const L1Kind = enum(u8) {
 
     math, // TODO with $
 
-    // inline command section: @command(...)
-    // no overloading!
-    // we do not push command node wrappers around args since they cost for nothing
-    cmd_link_2arg_0_url,
-    cmd_link_2arg_1_displayname,
+    // - inline command section: @command(...)
+    // - no overloading!
+    // - we do not push command node wrappers around args since they cost for nothing
+    // - note: the `inl_cmd_` prefix is important since the `CommandEngine` parses commands out of them
+    inl_cmd_link_0url,
+    inl_cmd_link_1displayname,
 
-    cmd_fs_2arg_0_size, // font-size
-    cmd_fs_2arg_1_text,
+    inl_cmd_fs_0size, // font-size
+    inl_cmd_fs_1text,
 
-    cmd_color_2arg_0_color,
-    cmd_color_2arg_1_text,
+    inl_cmd_color_0color,
+    inl_cmd_color_1text,
 
-    cmd_div_2arg_0_class,
-    cmd_div_2arg_1_text,
+    inl_cmd_div_0class,
+    inl_cmd_div_1text,
 
-    cmd_span_2arg_0_class,
-    cmd_span_2arg_1_text,
+    inl_cmd_span_0class,
+    inl_cmd_span_1text,
 
-    cmd_ar_1arg_text,
-    cmd_raw_1arg_bytes,
-    // datetime,
-    // for under h1 in articles
-    // TODO, should support the following styles:
+    inl_cmd_ar_text,
+    inl_cmd_raw_text,
+
+    // TODO, datetime for under h1 in articles, should support the following styles:
     // 1. YYYY-MM-DD, 2. YYYY-MM-DD HH:mm, 3. YYYY-MM-DD HH:mm:ss
 };
