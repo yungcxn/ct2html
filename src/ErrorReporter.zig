@@ -169,7 +169,7 @@ fn build_report(self: *@This(), r: Report) void {
             var pos_marker: [256]u8 = @splat(0);
             @memset(pos_marker[0..pos], ' ');
             pos_marker[pos] = '^';
-            self.printf("           {s}\n", .{pos_marker});
+            self.printf("           {s}\n", .{pos_marker[0 .. pos + 1]});
         }
     }
 

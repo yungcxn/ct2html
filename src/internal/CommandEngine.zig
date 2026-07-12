@@ -5,8 +5,9 @@ const Rule = @import("../element/Rule.zig");
 const Parser = @import("../input/Parser.zig");
 const L0SyntaxError = Parser.ParsingError.L0SyntaxError;
 const crash = @import("../ErrorReporter.zig").crash;
+const par = @import("../input/l0_rules.zig").par;
 
-// TODO custom commands through attributes, should be for l1 and l0
+// custom commands through attributes, should be for l1 and l0
 // since we parsing attributes is the first optional step during parsing, we
 //   can generate custom commands for l0 and l1.
 // because standard commands also may be complex (through running functions),
@@ -31,7 +32,11 @@ pub fn deinit(self: *@This()) void {
 const block_commandlit_argtable = commandlit_argtable_init(Node.L0Kind, "blk_cmd_");
 const inline_commandlit_argtable = commandlit_argtable_init(Node.L1Kind, "inl_cmd_");
 
-fn get_commandlit_args(comptime commandlit_argtable: anytype, lit: []const u8) ?[]Node.L1Kind {
+fn get_commandlit_args(
+    comptime Enum: type,
+    comptime commandlit_argtable: anytype,
+    lit: []const u8,
+) ?[]const Enum {
     for (commandlit_argtable) |row| {
         if (std.mem.eql(u8, row[0], lit)) {
             return row[1];
@@ -40,20 +45,27 @@ fn get_commandlit_args(comptime commandlit_argtable: anytype, lit: []const u8) ?
     return null;
 }
 
-fn commandlit_argtable_init(comptime Enum: type, comptime name_prefix: []const u8) []const struct { []const u8, []const Enum } {
+fn commandlit_argtable_init(
+    comptime Enum: type,
+    comptime name_prefix: []const u8,
+) []const struct { []const u8, []const Enum } {
     @setEvalBranchQuota(10000);
 
-    const fields = std.meta.fields(Node.L1Kind);
+    const fields = std.meta.fields(Enum);
 
     const column0 = comptime blk: {
         var list: []const []const u8 = &.{};
         inner: for (fields) |field| {
             if (std.mem.startsWith(u8, field.name, name_prefix)) {
-                const front_cut_name = field.name[(name_prefix.len)..];
-                const lit_len = std.mem.indexOf(u8, front_cut_name, "_") orelse {
-                    continue :inner;
-                };
-                const name = field.name[(name_prefix.len)..(name_prefix.len + lit_len)];
+                const front_cut_name = field.name[name_prefix.len..];
+                const lit_len = std.mem.indexOf(u8, front_cut_name, "_") orelse continue :inner;
+                const name = field.name[name_prefix.len .. name_prefix.len + lit_len];
+
+                // check if `name` is already in `list` (dedupe)
+                for (list) |existing| {
+                    if (std.mem.eql(u8, existing, name)) continue :inner;
+                }
+
                 list = list ++ .{name};
             }
         }
@@ -84,17 +96,20 @@ pub fn parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0
         return p.e.file_report(L0SyntaxError, true, "Nothing after @ for blockcommand", null);
     };
 
-    if (atc != 2) {
+    if (atc != 1) {
         // just do a par out of this, since it could be a usual @command() at the start of a par
         p.cursor = start;
-        _ = @import("../input/l0_rules.zig").par(p, endat) catch |err| return err;
+        _ = par(p, endat) catch |err| return err;
         return .transitioned;
     }
 
     const blockcmd_name_start = p.cursor;
 
     p.bounded_find(':', endat) catch {
-        return p.e.file_report(L0SyntaxError, true, "Missing colon after blockcommand name", null);
+        // same as above
+        p.cursor = start;
+        _ = par(p, endat) catch |err| return err;
+        return .transitioned;
     };
 
     // cursor is on ':', so we check if the blockcommand name is free of whitespace
@@ -102,9 +117,38 @@ pub fn parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0
         return p.e.file_report(L0SyntaxError, true, "Space between blockcommand name and colon", null);
     }
 
+    if (!p.bounds_freeof(blockcmd_name_start, p.cursor, '(')) {
+        // we possibly have a l1 inline command that has somewhere in that line
+        //   a colon, therefore we fall back to `par` gain
+        p.cursor = start;
+        _ = par(p, endat) catch |err| return err;
+        return .transitioned;
+    }
+
     const blockcmd_name = p.text[blockcmd_name_start..p.cursor];
-    const blockcmd_args = get_commandlit_args(block_commandlit_argtable, blockcmd_name) orelse {
-        return p.e.file_report(L0SyntaxError, true, "Unknown blockcommand name", null);
+    const blockcmd_args = get_commandlit_args(Node.L0Kind, block_commandlit_argtable, blockcmd_name) orelse {
+        const known_blockcmds = comptime blk: {
+            var list: []const []const u8 = &.{};
+            for (block_commandlit_argtable) |row| {
+                list = list ++ .{row[0]};
+            }
+            break :blk list;
+        };
+
+        const known_blockcmds_str = comptime blk: {
+            var list: []const u8 = &.{};
+            for (known_blockcmds) |name| {
+                list = list ++ name ++ ", ";
+            }
+            break :blk list;
+        };
+
+        return p.e.file_report(
+            L0SyntaxError,
+            true,
+            .{ "Unknown blockcommand name, choose from: {s}", .{known_blockcmds_str} },
+            null,
+        );
     };
 
     // cursor is at ':'...
@@ -117,7 +161,7 @@ pub fn parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0
         return p.e.file_report(error.L1SyntaxError, true, "Missing command argument", null);
     }
 
-    try generic_parse_command_args(
+    _ = try generic_parse_command_args(
         p,
         blockcmd_name,
         blockcmd_args,
@@ -147,7 +191,7 @@ pub fn parse_inline_command(p: *Parser, endat: usize) Parser.ParsingError!usize 
     }
 
     const cmd_name = p.text[name_start..p.cursor];
-    const cmd_args = get_commandlit_args(inline_commandlit_argtable, cmd_name) orelse {
+    const cmd_args = get_commandlit_args(Node.L1Kind, inline_commandlit_argtable, cmd_name) orelse {
         return p.e.file_report(error.L1SyntaxError, true, "Unknown command name", null);
     };
 
@@ -202,19 +246,19 @@ fn generic_parse_command_args(
     argareac: usize,
 ) Parser.ParsingError!usize { // returns created node cound, irrelevant for l0
     const parse_1arg = struct {
-        pub fn parse(pa: *Parser, areac: usize, cmdname: []const u8, kind: Node.L1Kind) Parser.ParsingError!usize {
+        pub fn parse(pa: *Parser, areac: usize, cmdname: []const u8, kind: anytype) Parser.ParsingError!usize {
             // cursor is on first char of arg
             const arg_start = pa.cursor;
             const arg_end = pa.cursor + areac;
 
             // push a node for the arg
-            if (comptime @typeInfo(@TypeOf(cmd_args)).array.child == Node.L0Kind) {
+            if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L0Kind) {
                 pa.l0nodes.push(Node.L0{
                     .kind = kind,
                     .span = .{ arg_start, arg_end },
                     .contains_l1 = true,
                 });
-            } else if (comptime @typeInfo(@TypeOf(cmd_args)).array.child == Node.L1Kind) {
+            } else if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L1Kind) {
                 pa.l1nodes.push(Node.L1{
                     .kind = kind,
                     .span = .{ arg_start, arg_end },
@@ -228,7 +272,7 @@ fn generic_parse_command_args(
     }.parse;
 
     const parse_2arg = struct {
-        pub fn parse(pa: *Parser, areac: usize, cmdname: []const u8, kind0: Node.L1Kind, kind1: Node.L1Kind) Parser.ParsingError!usize {
+        pub fn parse(pa: *Parser, areac: usize, cmdname: []const u8, kind0: anytype, kind1: anytype) Parser.ParsingError!usize {
             // cursor is on first char of arg
             const arg0_start = pa.cursor;
             const area_end = pa.cursor + areac;
@@ -251,7 +295,7 @@ fn generic_parse_command_args(
             const arg1_start = pa.cursor;
             const whitesp_pre_arg1 = arg1_start - (arg0_start + arg0c + ",".len);
 
-            if (comptime @typeInfo(@TypeOf(cmd_args)).array.child == Node.L0Kind) {
+            if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L0Kind) {
                 pa.l0nodes.push(Node.L0{
                     .kind = kind0,
                     .span = .{ arg0_start, arg0_start + arg0c },
@@ -263,7 +307,7 @@ fn generic_parse_command_args(
                     .span = .{ arg1_start, area_end },
                     .contains_l1 = true,
                 });
-            } else if (comptime @typeInfo(@TypeOf(cmd_args)).array.child == Node.L1Kind) {
+            } else if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L1Kind) {
                 pa.l1nodes.push(Node.L1{
                     .kind = kind0,
                     .span = .{ arg0_start, arg0_start + arg0c },
@@ -282,9 +326,100 @@ fn generic_parse_command_args(
         }
     }.parse;
 
+    const parse_3arg = struct {
+        pub fn parse(
+            pa: *Parser,
+            areac: usize,
+            cmdname: []const u8,
+            kind0: anytype,
+            kind1: anytype,
+            kind2: anytype,
+        ) Parser.ParsingError!usize {
+            // cursor is on first char of arg
+            const arg0_start = pa.cursor;
+            const area_end = pa.cursor + areac;
+
+            // find the first comma separating the three args
+            const arg0c = pa.bounded_findc(',', area_end) catch {
+                return pa.e.file_report(error.CommandSyntaxError, true, "Missing first comma in 3-arg command", null);
+            };
+
+            if (arg0c == 0) {
+                return pa.e.file_report(error.CommandSyntaxError, true, "Missing first argument in 3-arg command", null);
+            }
+
+            pa.inc(); // to be one space after the comma
+
+            pa.bounded_skip_whitesp(area_end) catch {
+                return pa.e.file_report(error.CommandSyntaxError, true, "Missing second argument in 3-arg command", null);
+            };
+
+            const arg1_start = pa.cursor;
+
+            // find the second comma separating the three args
+            const arg1c = pa.bounded_findc(',', area_end) catch {
+                return pa.e.file_report(error.CommandSyntaxError, true, "Missing second comma in 3-arg command", null);
+            };
+
+            if (arg1c == 0) {
+                return pa.e.file_report(error.CommandSyntaxError, true, "Missing second argument in 3-arg command", null);
+            }
+
+            pa.inc(); // to be one space after the comma
+
+            pa.bounded_skip_whitesp(area_end) catch {
+                return pa.e.file_report(error.CommandSyntaxError, true, "Missing third argument in 3-arg command", null);
+            };
+
+            const arg2_start = pa.cursor;
+
+            if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L0Kind) {
+                pa.l0nodes.push(Node.L0{
+                    .kind = kind0,
+                    .span = .{ arg0_start, arg0_start + arg0c },
+                    .contains_l1 = true,
+                });
+
+                pa.l0nodes.push(Node.L0{
+                    .kind = kind1,
+                    .span = .{ arg1_start, arg1_start + arg1c },
+                    .contains_l1 = true,
+                });
+
+                pa.l0nodes.push(Node.L0{
+                    .kind = kind2,
+                    .span = .{ arg2_start, area_end },
+                    .contains_l1 = true,
+                });
+            } else if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L1Kind) {
+                pa.l1nodes.push(Node.L1{
+                    .kind = kind0,
+                    .span = .{ arg0_start, arg0_start + arg0c },
+                    .margin = .{ "@".len + cmdname.len + "(".len, ",".len },
+                });
+
+                pa.l1nodes.push(Node.L1{
+                    .kind = kind1,
+                    .span = .{ arg1_start, arg1_start + arg1c },
+                    .margin = .{ 0, ",".len },
+                });
+
+                pa.l1nodes.push(Node.L1{
+                    .kind = kind2,
+                    .span = .{ arg2_start, area_end },
+                    .margin = .{ 0, ")".len },
+                });
+            } else {
+                @compileError("cmd_args must be []Node.L0Kind or []Node.L1Kind");
+            }
+            return 3; // created three nodes
+        }
+    }.parse;
+
     switch (cmd_args.len) {
         1 => return parse_1arg(p, argareac, cmd_name, cmd_args[0]),
         2 => return parse_2arg(p, argareac, cmd_name, cmd_args[0], cmd_args[1]),
+        3 => return parse_3arg(p, argareac, cmd_name, cmd_args[0], cmd_args[1], cmd_args[2]),
         else => crash("Unsupported number of command arguments"),
     }
 }

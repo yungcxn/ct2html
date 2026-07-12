@@ -42,11 +42,15 @@ pub const datatable = hack.StructByteMap(.{
     .{ .{Node.L0Kind.num_paren_item_label}, Rule.GenDef.def("<li value=\"", "\">") },
     .{ .{Node.L0Kind.num_paren_item_text}, Rule.GenDef.def("", "</li>") },
 
-    .{ .{Node.L0Kind.img}, Rule.GenDef.def(&pre_command_img, &post_command_img) },
-    .{ .{Node.L0Kind.script}, Rule.GenDef.def("<script src=\"", "\"></script>") },
-    .{ .{Node.L0Kind.ar}, Rule.GenDef.def("<p dir=\"rtl\" lang=\"ar\">", "</p>") },
-    .{ .{Node.L0Kind.header}, Rule.GenDef.def("<header>", "</header>") },
-    .{ .{Node.L0Kind.footer}, Rule.GenDef.def("<footer>", "</footer>") },
+    .{ .{Node.L0Kind.blk_cmd_img_0src}, Rule.GenDef.def("<figure><img src=\"", "\" ") },
+    .{ .{Node.L0Kind.blk_cmd_img_1size}, Rule.GenDef.def("style=\"width:", "; height: auto;\" alt=\"\" />") },
+    .{ .{Node.L0Kind.blk_cmd_img_2caption}, Rule.GenDef.def("<figcaption>", "</figcaption></figure>") },
+
+    .{ .{Node.L0Kind.blk_cmd_script_link}, Rule.GenDef.def("<script src=\"", "\"></script>") },
+    .{ .{Node.L0Kind.blk_cmd_style_link}, Rule.GenDef.def("<link rel=\"stylesheet\" href=\"", "\">") },
+    .{ .{Node.L0Kind.blk_cmd_ar_text}, Rule.GenDef.def("<p dir=\"rtl\" lang=\"ar\">", "</p>") },
+    .{ .{Node.L0Kind.blk_cmd_header_text}, Rule.GenDef.def("<header>", "</header>") },
+    .{ .{Node.L0Kind.blk_cmd_footer_text}, Rule.GenDef.def("<footer>", "</footer>") },
     // .{ .{Node.L0Kind.datetime}, Rule.GenDef.def(&command_datetime) },
     // L1
     .{ .{Node.L1Kind.inline_code}, Rule.GenDef.def("<code>", "</code>") },
@@ -101,18 +105,6 @@ fn head_sec(g: *Generator, _: *anyopaque) Generator.GenError!?@Vector(2, usize) 
     g.print("</head>\n<body>");
     return null; // nothing to inspect in here
 }
-
-// fn command_datetime(g: *Generator, span: ?@Vector(2, usize)) Generator.GenError!void {
-//     if (span == null) crash(error.NullSpan);
-
-//     g.print("<time datetime=\"");
-//     g.print_span(span.?[0], span.?[1]);
-//     g.print("\">");
-
-//     const datetime_fmt: []u8 = g.textin[span.?[0]..span.?[1]];
-
-//     g.print("</time>");
-// }
 
 fn generic_pre_anchored_heading(
     g: *Generator,
