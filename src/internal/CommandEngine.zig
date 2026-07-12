@@ -238,188 +238,75 @@ pub fn parse_inline_command(p: *Parser, endat: usize) Parser.ParsingError!usize 
     return nodes_pushed;
 }
 
-// for l0 block commands, aswell as l1 inline commands
 fn generic_parse_command_args(
     p: *Parser,
     cmd_name: []const u8,
     cmd_args: anytype, // []Node.L0Kind or []Node.L1Kind
     argareac: usize,
-) Parser.ParsingError!usize { // returns created node cound, irrelevant for l0
-    const parse_1arg = struct {
-        pub fn parse(pa: *Parser, areac: usize, cmdname: []const u8, kind: anytype) Parser.ParsingError!usize {
-            // cursor is on first char of arg
-            const arg_start = pa.cursor;
-            const arg_end = pa.cursor + areac;
+) Parser.ParsingError!usize {
+    const n = cmd_args.len;
+    if (n == 0) crash("Unsupported number of command arguments");
 
-            // push a node for the arg
-            if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L0Kind) {
-                pa.l0nodes.push(Node.L0{
-                    .kind = kind,
-                    .span = .{ arg_start, arg_end },
-                    .contains_l1 = true,
-                });
-            } else if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L1Kind) {
-                pa.l1nodes.push(Node.L1{
-                    .kind = kind,
-                    .span = .{ arg_start, arg_end },
-                    .margin = .{ "@".len + cmdname.len + "(".len, ")".len },
-                });
-            } else {
-                @compileError("cmd_args must be []Node.L0Kind or []Node.L1Kind");
+    const is_l0 = comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L0Kind;
+    const is_l1 = comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L1Kind;
+    if (!is_l0 and !is_l1) @compileError("cmd_args must be []Node.L0Kind or []Node.L1Kind");
+
+    const area_end = p.cursor + argareac;
+    const prefix_len = "@".len + cmd_name.len + "(".len;
+
+    var arg_start = p.cursor;
+    var left_margin: usize = prefix_len; // only the very first arg gets the "@name(" prefix
+
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const is_last = (i == n - 1);
+        var arg_end: usize = undefined;
+        var whitesp_pre_next: usize = 0;
+
+        if (!is_last) {
+            // only look for a comma if we still expect another argument after this one.
+            // any comma inside the *last* argument's span is just text and is never searched for.
+            const argc = p.bounded_findc(',', area_end) catch {
+                return p.e.file_report(error.CommandSyntaxError, true, "Missing comma in command arguments", null);
+            };
+            if (argc == 0) {
+                return p.e.file_report(error.CommandSyntaxError, true, "Missing argument in command", null);
             }
-            return 1; // created one node
+            arg_end = arg_start + argc;
+
+            p.inc(); // step past the comma
+
+            p.bounded_skip_whitesp(area_end) catch {
+                return p.e.file_report(error.CommandSyntaxError, true, "Missing next argument in command", null);
+            };
+
+            const next_arg_start = p.cursor;
+            whitesp_pre_next = next_arg_start - (arg_end + ",".len);
+        } else {
+            arg_end = area_end;
         }
-    }.parse;
 
-    const parse_2arg = struct {
-        pub fn parse(pa: *Parser, areac: usize, cmdname: []const u8, kind0: anytype, kind1: anytype) Parser.ParsingError!usize {
-            // cursor is on first char of arg
-            const arg0_start = pa.cursor;
-            const area_end = pa.cursor + areac;
+        const right_margin: usize = if (is_last) ")".len else ",".len;
 
-            // find the comma separating the two args
-            const arg0c = pa.bounded_findc(',', area_end) catch {
-                return pa.e.file_report(error.CommandSyntaxError, true, "Missing comma in 2-arg command", null);
-            };
-
-            if (arg0c == 0) {
-                return pa.e.file_report(error.CommandSyntaxError, true, "Missing first argument in 2-arg command", null);
-            }
-
-            pa.inc(); // to be one space after the comma
-
-            pa.bounded_skip_whitesp(area_end) catch {
-                return pa.e.file_report(error.CommandSyntaxError, true, "Missing second argument in 2-arg command", null);
-            };
-
-            const arg1_start = pa.cursor;
-            const whitesp_pre_arg1 = arg1_start - (arg0_start + arg0c + ",".len);
-
-            if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L0Kind) {
-                pa.l0nodes.push(Node.L0{
-                    .kind = kind0,
-                    .span = .{ arg0_start, arg0_start + arg0c },
-                    .contains_l1 = true,
-                });
-
-                pa.l0nodes.push(Node.L0{
-                    .kind = kind1,
-                    .span = .{ arg1_start, area_end },
-                    .contains_l1 = true,
-                });
-            } else if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L1Kind) {
-                pa.l1nodes.push(Node.L1{
-                    .kind = kind0,
-                    .span = .{ arg0_start, arg0_start + arg0c },
-                    .margin = .{ "@".len + cmdname.len + "(".len, ",".len },
-                });
-
-                pa.l1nodes.push(Node.L1{
-                    .kind = kind1,
-                    .span = .{ arg1_start, area_end },
-                    .margin = .{ whitesp_pre_arg1, ")".len },
-                });
-            } else {
-                @compileError("cmd_args must be []Node.L0Kind or []Node.L1Kind");
-            }
-            return 2; // created two nodes
+        if (is_l0) {
+            p.l0nodes.push(Node.L0{
+                .kind = cmd_args[i],
+                .span = .{ arg_start, arg_end },
+                .contains_l1 = true,
+            });
+        } else {
+            p.l1nodes.push(Node.L1{
+                .kind = cmd_args[i],
+                .span = .{ arg_start, arg_end },
+                .margin = .{ left_margin, right_margin },
+            });
         }
-    }.parse;
 
-    const parse_3arg = struct {
-        pub fn parse(
-            pa: *Parser,
-            areac: usize,
-            cmdname: []const u8,
-            kind0: anytype,
-            kind1: anytype,
-            kind2: anytype,
-        ) Parser.ParsingError!usize {
-            // cursor is on first char of arg
-            const arg0_start = pa.cursor;
-            const area_end = pa.cursor + areac;
-
-            // find the first comma separating the three args
-            const arg0c = pa.bounded_findc(',', area_end) catch {
-                return pa.e.file_report(error.CommandSyntaxError, true, "Missing first comma in 3-arg command", null);
-            };
-
-            if (arg0c == 0) {
-                return pa.e.file_report(error.CommandSyntaxError, true, "Missing first argument in 3-arg command", null);
-            }
-
-            pa.inc(); // to be one space after the comma
-
-            pa.bounded_skip_whitesp(area_end) catch {
-                return pa.e.file_report(error.CommandSyntaxError, true, "Missing second argument in 3-arg command", null);
-            };
-
-            const arg1_start = pa.cursor;
-
-            // find the second comma separating the three args
-            const arg1c = pa.bounded_findc(',', area_end) catch {
-                return pa.e.file_report(error.CommandSyntaxError, true, "Missing second comma in 3-arg command", null);
-            };
-
-            if (arg1c == 0) {
-                return pa.e.file_report(error.CommandSyntaxError, true, "Missing second argument in 3-arg command", null);
-            }
-
-            pa.inc(); // to be one space after the comma
-
-            pa.bounded_skip_whitesp(area_end) catch {
-                return pa.e.file_report(error.CommandSyntaxError, true, "Missing third argument in 3-arg command", null);
-            };
-
-            const arg2_start = pa.cursor;
-
-            if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L0Kind) {
-                pa.l0nodes.push(Node.L0{
-                    .kind = kind0,
-                    .span = .{ arg0_start, arg0_start + arg0c },
-                    .contains_l1 = true,
-                });
-
-                pa.l0nodes.push(Node.L0{
-                    .kind = kind1,
-                    .span = .{ arg1_start, arg1_start + arg1c },
-                    .contains_l1 = true,
-                });
-
-                pa.l0nodes.push(Node.L0{
-                    .kind = kind2,
-                    .span = .{ arg2_start, area_end },
-                    .contains_l1 = true,
-                });
-            } else if (comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L1Kind) {
-                pa.l1nodes.push(Node.L1{
-                    .kind = kind0,
-                    .span = .{ arg0_start, arg0_start + arg0c },
-                    .margin = .{ "@".len + cmdname.len + "(".len, ",".len },
-                });
-
-                pa.l1nodes.push(Node.L1{
-                    .kind = kind1,
-                    .span = .{ arg1_start, arg1_start + arg1c },
-                    .margin = .{ 0, ",".len },
-                });
-
-                pa.l1nodes.push(Node.L1{
-                    .kind = kind2,
-                    .span = .{ arg2_start, area_end },
-                    .margin = .{ 0, ")".len },
-                });
-            } else {
-                @compileError("cmd_args must be []Node.L0Kind or []Node.L1Kind");
-            }
-            return 3; // created three nodes
+        if (!is_last) {
+            arg_start = p.cursor;
+            left_margin = whitesp_pre_next;
         }
-    }.parse;
-
-    switch (cmd_args.len) {
-        1 => return parse_1arg(p, argareac, cmd_name, cmd_args[0]),
-        2 => return parse_2arg(p, argareac, cmd_name, cmd_args[0], cmd_args[1]),
-        3 => return parse_3arg(p, argareac, cmd_name, cmd_args[0], cmd_args[1], cmd_args[2]),
-        else => crash("Unsupported number of command arguments"),
     }
+
+    return n;
 }

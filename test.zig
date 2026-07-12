@@ -5,8 +5,6 @@ const crash = @import("src/ErrorReporter.zig").crash;
 const expectError = std.testing.expectError;
 
 fn test_for_file(filepath: []const u8) main.RunError!void {
-    std.debug.print("Testing file: {s}\n", .{filepath});
-
     const cwd = filex.open_dir(std.testing.io, null, "test/") catch crash("cwd error");
     defer filex.close_dir(std.testing.io, cwd);
 
