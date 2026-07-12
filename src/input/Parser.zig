@@ -133,16 +133,14 @@ fn parse_all_l1s(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void {
         }
 
         const l1_ri = l1_rules.datatable.lookup(c) orelse continue;
-        const l1node = try l1_ri.parse_node(self, node_end);
+        const l1nodes_pushedc = try l1_ri.parse_node(self, node_end);
 
-        if (l1node) |node| {
-            self.l1nodes.push(node);
-
+        if (l1nodes_pushedc != 0) {
             if (l0node.l1child0 == null) {
-                l0node.l1child0 = self.l1nodes.head - 1;
-                l0node.l1childhead = l0node.l1child0.? + 1;
+                l0node.l1child0 = self.l1nodes.head - l1nodes_pushedc;
+                l0node.l1childhead = l0node.l1child0.? + l1nodes_pushedc;
             } else {
-                l0node.l1childhead = l0node.l1childhead.? + 1;
+                l0node.l1childhead = l0node.l1childhead.? + l1nodes_pushedc;
             }
         }
     }

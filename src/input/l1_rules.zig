@@ -29,7 +29,7 @@ fn capture_def(
     return .{
         triggers,
         Rule.L1Def.def(struct {
-            pub fn capture(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
+            pub fn capture(p: *Parser, endat: usize) Parser.ParsingError!usize {
                 p.dec(); // to get cursor back to the first char on trigger
                 const capturec = p.bounded_skipc(triggers, endat) catch {
                     return p.e.file_report(error.L1SyntaxError, true, "Pre-capture not found", null);
@@ -73,14 +73,15 @@ fn capture_def(
                     return p.e.file_report(error.L1SyntaxError, true, "Capture mismatch", level);
                 }
 
-                return Node.L1{
+                p.l1nodes.push(Node.L1{
                     .kind = level.?,
                     .span = .{ text_start, text_start + chars_in_capture },
                     .margin = .{ capturec, capturec2 }, // both same len
-                };
+                });
 
                 // we return on cursor being +1 of the second capture, which is correct,
                 // -> next pop gives the letter after the capture, as expected
+                return 1; // created one node
             }
         }.capture),
     };
@@ -88,9 +89,8 @@ fn capture_def(
 
 // here, we abuse the fact that we could return null, so it seems that we generated nothing,
 //   but we took advantage of p being available to push the arg nodes "under the hood".
-fn inline_command(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
+fn inline_command(p: *Parser, endat: usize) Parser.ParsingError!usize {
     const InlineCommandLiterals = enum(u8) {
-        rawlink,
         link,
         fs,
         color,
@@ -149,17 +149,22 @@ fn inline_command(p: *Parser, endat: usize) Parser.ParsingError!?Node.L1 {
     // cursor is on ')', and it will be restored after the following block,
     //   so we just need to incr once to be on first char after ')'
     defer p.inc();
+    var nodes_pushed: usize = 0;
     {
         const cursor_save = p.cursor;
         p.cursor = p.cursor - argareac;
 
-        parse_inline_command_args(InlineCommandLiterals, p, cmd_type, argareac) catch |err| {
-            return p.e.file_report(error.L1SyntaxError, true, err, null);
-        };
+        nodes_pushed = try parse_inline_command_args(
+            InlineCommandLiterals,
+            p,
+            cmd_type,
+            argareac,
+        );
+
         p.cursor = cursor_save;
     }
 
-    return null;
+    return nodes_pushed;
 }
 
 // should push bare arg nodes into l1 buffer
@@ -169,9 +174,9 @@ fn parse_inline_command_args(
     p: *Parser,
     cmd_type: InlineCommandLiterals,
     argareac: usize,
-) Parser.ParsingError!void {
+) Parser.ParsingError!usize {
     const parse_1arg = struct {
-        pub fn parse(pa: *Parser, areac: usize, cmdtype: InlineCommandLiterals, kind: Node.L1Kind) Parser.ParsingError!void {
+        pub fn parse(pa: *Parser, areac: usize, cmdtype: InlineCommandLiterals, kind: Node.L1Kind) Parser.ParsingError!usize {
             // cursor is on first char of arg
             const arg_start = pa.cursor;
             const arg_end = pa.cursor + areac;
@@ -182,11 +187,12 @@ fn parse_inline_command_args(
                 .span = .{ arg_start, arg_end },
                 .margin = .{ "@".len + @tagName(cmdtype).len + "(".len, ")".len },
             });
+            return 1; // created one node
         }
     }.parse;
 
     const parse_2arg = struct {
-        pub fn parse(pa: *Parser, areac: usize, cmdtype: InlineCommandLiterals, kind0: Node.L1Kind, kind1: Node.L1Kind) Parser.ParsingError!void {
+        pub fn parse(pa: *Parser, areac: usize, cmdtype: InlineCommandLiterals, kind0: Node.L1Kind, kind1: Node.L1Kind) Parser.ParsingError!usize {
             // cursor is on first char of arg
             const arg0_start = pa.cursor;
             const area_end = pa.cursor + areac;
@@ -199,6 +205,8 @@ fn parse_inline_command_args(
             if (arg0c == 0) {
                 return pa.e.file_report(error.L1SyntaxError, true, "Missing first argument in 2-arg command", null);
             }
+
+            pa.inc(); // to be one space after the comma
 
             pa.bounded_skip_whitesp(area_end) catch {
                 return pa.e.file_report(error.L1SyntaxError, true, "Missing second argument in 2-arg command", null);
@@ -218,16 +226,17 @@ fn parse_inline_command_args(
                 .span = .{ arg1_start, area_end },
                 .margin = .{ whitesp_pre_arg1, ")".len },
             });
+            return 2; // created two nodes
         }
     }.parse;
 
     switch (cmd_type) {
-        .rawlink => return parse_1arg(p, argareac, cmd_type, .cmd_rawlink_1arg_url),
+        .raw => return parse_1arg(p, argareac, cmd_type, .cmd_ar_1arg_text),
+        .ar => return parse_1arg(p, argareac, cmd_type, .cmd_raw_1arg_bytes),
         .link => return parse_2arg(p, argareac, cmd_type, .cmd_link_2arg_0_url, .cmd_link_2arg_1_displayname),
         .fs => return parse_2arg(p, argareac, cmd_type, .cmd_fs_2arg_0_size, .cmd_fs_2arg_1_text),
         .color => return parse_2arg(p, argareac, cmd_type, .cmd_color_2arg_0_color, .cmd_color_2arg_1_text),
         .div => return parse_2arg(p, argareac, cmd_type, .cmd_div_2arg_0_class, .cmd_div_2arg_1_text),
         .span => return parse_2arg(p, argareac, cmd_type, .cmd_span_2arg_0_class, .cmd_span_2arg_1_text),
-        else => crash("Unhandled command type in parse_inline_command_args"),
     }
 }

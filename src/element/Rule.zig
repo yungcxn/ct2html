@@ -31,7 +31,7 @@ pub const L0Def = struct {
 // in-block rules, really simple, e.g. bold text
 // TODO: l1 in l1
 pub const L1Def = struct {
-    parse_node: *const fn (*Parser, usize) Parser.ParsingError!?Node.L1,
+    parse_node: *const fn (*Parser, usize) Parser.ParsingError!usize,
 
     pub fn def(comptime parse_node: anytype) L1Def {
         return L1Def{ .parse_node = parse_node };

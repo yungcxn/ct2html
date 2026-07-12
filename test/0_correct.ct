@@ -88,7 +88,7 @@ The end before the end.
 
 1. Again 
 
-Here I want @link(https://www.google.com) without a name,
+Here I want @link(https://www.google.com, https://www.google.com) without a name,
 
 @@img:link, 50%, this is a caption.
 

@@ -59,13 +59,18 @@ pub const datatable = hack.StructByteMap(.{
     .{ .{Node.L1Kind.strikethrough_bold}, Rule.GenDef.def("<del><strong>", "</strong></del>") },
     .{ .{Node.L1Kind.strikethrough_italic}, Rule.GenDef.def("<del><em>", "</em></del>") },
     .{ .{Node.L1Kind.strikethrough_bold_italic}, Rule.GenDef.def("<del><strong><em>", "</em></strong></del>") },
-    .{ .{Node.L1Kind.raw}, Rule.GenDef.def("", "") }, // just passed through
-    .{ .{Node.L1Kind.link}, Rule.GenDef.def(&pre_command_link, "</a>") },
-    .{ .{Node.L1Kind.ar}, Rule.GenDef.def("<span dir=\"rtl\" lang=\"ar\">", "</span>") },
-    .{ .{Node.L1Kind.div}, Rule.GenDef.def(&pre_command_div, "</div>") },
-    .{ .{Node.L1Kind.span}, Rule.GenDef.def(&pre_command_span, "</span>") },
-    .{ .{Node.L1Kind.color}, Rule.GenDef.def(&pre_command_color, "</span>") },
-    .{ .{Node.L1Kind.fs}, Rule.GenDef.def(&pre_command_fs, "</span>") },
+    .{ .{Node.L1Kind.cmd_raw_1arg_bytes}, Rule.GenDef.def("", "") }, // just passed through
+    .{ .{Node.L1Kind.cmd_link_2arg_0_url}, Rule.GenDef.def("<a href=\"", "\">") },
+    .{ .{Node.L1Kind.cmd_link_2arg_1_displayname}, Rule.GenDef.def("", "</a>") },
+    .{ .{Node.L1Kind.cmd_ar_1arg_text}, Rule.GenDef.def("<span dir=\"rtl\" lang=\"ar\">", "</span>") },
+    .{ .{Node.L1Kind.cmd_div_2arg_0_class}, Rule.GenDef.def("<div class=\"", "\">") },
+    .{ .{Node.L1Kind.cmd_div_2arg_1_text}, Rule.GenDef.def("", "</div>") },
+    .{ .{Node.L1Kind.cmd_span_2arg_0_class}, Rule.GenDef.def("<span class=\"", "\">") },
+    .{ .{Node.L1Kind.cmd_span_2arg_1_text}, Rule.GenDef.def("", "</span>") },
+    .{ .{Node.L1Kind.cmd_color_2arg_0_color}, Rule.GenDef.def("<span style=\"color: ", "\">") },
+    .{ .{Node.L1Kind.cmd_color_2arg_1_text}, Rule.GenDef.def("", "</span>") },
+    .{ .{Node.L1Kind.cmd_fs_2arg_0_size}, Rule.GenDef.def("<span style=\"font-size: ", "\">") },
+    .{ .{Node.L1Kind.cmd_fs_2arg_1_text}, Rule.GenDef.def("", "</span>") },
 }).init();
 
 // for those attributes that get generated into the head section
@@ -151,30 +156,6 @@ fn generic_pre_anchored_heading(
     }
 
     return span;
-}
-
-fn pre_command_link(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
-    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
-    const span = realnode.span;
-
-    if (span == null) crash(error.NullSpan);
-
-    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
-        if (c == ',') {
-            g.print("<a href=\"");
-            g.print_span(span.?[0], span.?[0] + i);
-            g.print("\">");
-            return @Vector(2, usize){ span.?[0] + i + 1, span.?[1] };
-        }
-    }
-
-    g.print("<a href='");
-    g.print_span(span.?[0], span.?[1]);
-    g.print("'>");
-    g.print_span(span.?[0], span.?[1]);
-    g.print("</a>");
-
-    return null; // nothing to inspect in the link
 }
 
 fn pre_command_img(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
@@ -266,80 +247,4 @@ fn post_command_img(g: *Generator, node: *anyopaque) Generator.GenError!void {
     if (commac == 1 or commac == 2) {
         g.print("</figcaption></figure>");
     } // else nothing, since we already printed it.
-}
-
-fn pre_command_div(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
-    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
-    const span = realnode.span;
-
-    if (span == null) crash(error.NullSpan);
-
-    g.print("<div");
-
-    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
-        if (c == ',') { // class string
-            g.print(" class=\"");
-            g.print_span(span.?[0], span.?[0] + i);
-            g.print("\">");
-            return @Vector(2, usize){ span.?[0] + i + 1, span.?[1] };
-        }
-    }
-    g.print(">");
-    return span;
-}
-
-fn pre_command_span(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
-    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
-    const span = realnode.span;
-
-    if (span == null) crash(error.NullSpan);
-
-    g.print("<span");
-
-    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
-        if (c == ',') { // class string
-            g.print(" class=\"");
-            g.print_span(span.?[0], span.?[0] + i);
-            g.print("\">");
-            return @Vector(2, usize){ span.?[0] + i + 1, span.?[1] };
-        }
-    }
-    g.print(">");
-    return span;
-}
-
-fn pre_command_color(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
-    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
-    const span = realnode.span;
-
-    if (span == null) crash(error.NullSpan);
-
-    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
-        if (c == ',') { // color
-            g.print("<span style=\"color: ");
-            g.print_span(span.?[0], span.?[0] + i);
-            g.print(";\">");
-            return @Vector(2, usize){ span.?[0] + i + 1, span.?[1] };
-        }
-    }
-
-    return g.e.file_report(Generator.GenError.InvalidL1Format, false, "Not of format: (<color>, <text>)", null);
-}
-
-fn pre_command_fs(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
-    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
-    const span = realnode.span;
-
-    if (span == null) crash(error.NullSpan);
-
-    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
-        if (c == ',') { // font size
-            g.print("<span style=\"font-size: ");
-            g.print_span(span.?[0], span.?[0] + i);
-            g.print(";\">");
-            return @Vector(2, usize){ span.?[0] + i + 1, span.?[1] };
-        }
-    }
-
-    return g.e.file_report(Generator.GenError.InvalidL1Format, false, "Not of format: (<font-size>, <text>)", null);
 }

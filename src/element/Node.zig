@@ -106,8 +106,6 @@ pub const L1Kind = enum(u8) {
     // inline command section: @command(...)
     // no overloading!
     // we do not push command node wrappers around args since they cost for nothing
-    cmd_rawlink_1arg_url,
-
     cmd_link_2arg_0_url,
     cmd_link_2arg_1_displayname,
 
