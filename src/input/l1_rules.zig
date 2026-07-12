@@ -11,7 +11,7 @@ const file_report = @import("../ErrorReporter.zig").file_report;
 const crash = @import("../ErrorReporter.zig").crash;
 
 pub const datatable = hack.StructByteMap(.{
-    .{ .{'@'}, Rule.L1Def.def(&CommandEngine.parse_inline_command) },
+    .{ .{'@'}, Rule.L1Def.def(&CommandEngine.l1_parse_inline_command) },
     .{ .{'`'}, Rule.L1Def.def(&inline_code) },
     .{ .{'*'}, Rule.L1Def.def(&bold_and_sons) },
     .{ .{'_'}, Rule.L1Def.def(&strikethrough_and_sons) },

@@ -33,7 +33,7 @@ And again some ***both***.
 # Hi  
 
 This is some example 
-text, where I'd like to show my `inline code` -- and
+text, where \hidden-backslash and shown\\-backslash I'd like to show my `inline code` -- and
 how my blocks work.
 
 This is my 
@@ -50,6 +50,9 @@ And this is another block.
 
 ```python
 Nice code
+
+
+with single\backslash.
 ```My code caption.
 
 And even another even

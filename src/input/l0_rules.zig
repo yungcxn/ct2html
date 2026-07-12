@@ -33,7 +33,7 @@ pub const datatable = hack.StructByteMap(.{
         '9',
     }, Rule.L0Def.def(&num_items, .ordered_list_begin, .ordered_list_end, false) },
 
-    .{ .{'@'}, Rule.L0Def.def(&CommandEngine.parse_block_command, null, null, false) },
+    .{ .{'@'}, Rule.L0Def.def(&CommandEngine.l0_parse_block_command, null, null, false) },
 
     // this is special: head_anchor gets released, but attributes not. then later at generation,
     //   throught the attribute handler, some get written into it

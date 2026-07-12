@@ -43,6 +43,7 @@ pub const L1Def = struct {
 pub const GenDef = struct {
     pre_alg: GenPreAlg,
     post_alg: GenPostAlg,
+    stop_escaping: bool = false,
 
     const GenPreAlg = union(enum) {
         constant: []const u8,
@@ -65,7 +66,7 @@ pub const GenDef = struct {
         node: *anyopaque,
     ) Generator.GenError!void;
 
-    pub fn def(pre: anytype, post: anytype) GenDef {
+    pub fn def(pre: anytype, post: anytype, stop_escaping: bool) GenDef {
         return .{
             .pre_alg = switch (@TypeOf(pre)) {
                 GenPreFn => .{ .complex = pre },
@@ -75,6 +76,7 @@ pub const GenDef = struct {
                 GenPostFn => .{ .complex = post },
                 else => .{ .constant = post },
             },
+            .stop_escaping = stop_escaping,
         };
     }
 };

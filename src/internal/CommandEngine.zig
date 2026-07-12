@@ -12,22 +12,83 @@ const par = @import("../input/l0_rules.zig").par;
 //   can generate custom commands for l0 and l1.
 // because standard commands also may be complex (through running functions),
 //   they get treated differently and are being handled in the `Generator`
-attributed_cmd_table: DynBuf(void),
+//
+// and the idx corresponds to the COMMAND-ID (important to grasp their generation)
+custom_cmd_table: DynBuf(CustomCommandInfo),
+alloc: std.mem.Allocator,
 
-pub fn init(
-    alloc: std.mem.Allocator,
-) @This() {
-    return .{
-        .attributed_cmd_table = .init(alloc, 10),
+pub fn init(alloc: std.mem.Allocator) @This() {
+    return @This(){
+        .custom_cmd_table = .init(alloc, 0),
     };
 }
 
 pub fn deinit(self: *@This()) void {
-    self.attributed_cmd_table.deinit();
+    for (self.custom_cmd_table.slice_view()) |cmd| {
+        cmd.deinit(self.alloc);
+    }
+    self.custom_cmd_table.deinit(self.alloc);
 }
 
-// here we construct the `commandlit_argtable`, through l1 `inl_cmd_<literal>_*` l1node-kinds.
-//                                           OR through l0 `blk_cmd_<literal>_*` l0node-kinds.
+pub fn new_custom_command(
+    self: *@This(),
+    alloc: std.mem.Allocator,
+    literal: []const u8,
+    argc: usize,
+) !usize { // returns the command id, which gets inserted into the node
+    const idx = self.custom_cmd_table.len;
+    const cmdinfo = CustomCommandInfo.init(alloc, literal, argc);
+    try self.custom_cmd_table.append(cmdinfo);
+    return idx;
+}
+
+pub const CustomCommandInfo = struct {
+    literal: []const u8,
+    argc: usize,
+    pres: [][]u8, // for each arg
+    posts: [][]u8, // for each arg
+
+    pub fn init(
+        alloc: std.mem.Allocator,
+        literal: []const u8,
+        argc: usize,
+    ) CustomCommandInfo {
+        return CustomCommandInfo{
+            .literal = literal,
+            .argc = argc,
+            .pres = alloc.alloc([]u8, argc) catch crash(error.OOM),
+            .posts = alloc.alloc([]u8, argc) catch crash(error.OOM),
+        };
+    }
+
+    // we own the pres and posts due to the preprocessed text to be free'd early
+    pub fn set_pre_post(
+        self: *CustomCommandInfo,
+        alloc: std.mem.Allocator,
+        arg_idx: usize,
+        pre: []const u8,
+        post: []const u8,
+    ) !void {
+        if (arg_idx >= self.argc) {
+            return error.InvalidArgument;
+        }
+        self.pres[arg_idx] = alloc.dupe(u8, pre) catch crash(error.OOM);
+        self.posts[arg_idx] = alloc.dupe(u8, post) catch crash(error.OOM);
+    }
+
+    // we do not need to store an additional alloc pointer for many of `@This()`
+    pub fn deinit(self: *CustomCommandInfo, alloc: std.mem.Allocator) void {
+        for (self.argc) |i| {
+            alloc.free(self.pres[i]);
+            alloc.free(self.posts[i]);
+        }
+        alloc.free(self.pres);
+        alloc.free(self.posts);
+    }
+};
+
+// here we construct the `commandlit_argtable`, through l1 `inl_cmd_<literal>_*`
+//                                           OR through l0 `blk_cmd_<literal>_*`
 // row-format: { lit_string, .{arg0_kind, arg1_kind, ...} }
 const block_commandlit_argtable = commandlit_argtable_init(Node.L0Kind, "blk_cmd_");
 const inline_commandlit_argtable = commandlit_argtable_init(Node.L1Kind, "inl_cmd_");
@@ -89,7 +150,8 @@ fn commandlit_argtable_init(
     return rows;
 }
 
-pub fn parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
+// [L0 RULE]
+pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
     const start = p.cursor;
     // we assume we are on '@'
     const atc: usize = p.skipc('@') catch {
@@ -125,6 +187,7 @@ pub fn parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0
         return .transitioned;
     }
 
+    // TODO NEXT: orelse: try to parse custom command
     const blockcmd_name = p.text[blockcmd_name_start..p.cursor];
     const blockcmd_args = get_commandlit_args(Node.L0Kind, block_commandlit_argtable, blockcmd_name) orelse {
         const known_blockcmds = comptime blk: {
@@ -171,9 +234,10 @@ pub fn parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0
     return .success;
 }
 
+// [L1 RULE]
 // here, we abuse the fact that we could return null, so it seems that we generated nothing,
 //   but we took advantage of p being available to push the arg nodes "under the hood".
-pub fn parse_inline_command(p: *Parser, endat: usize) Parser.ParsingError!usize {
+pub fn l1_parse_inline_command(p: *Parser, endat: usize) Parser.ParsingError!usize {
     // we only accept commands of type @key(arg), while having cursor on @+1
     const name_start = p.cursor;
 
@@ -191,6 +255,7 @@ pub fn parse_inline_command(p: *Parser, endat: usize) Parser.ParsingError!usize 
     }
 
     const cmd_name = p.text[name_start..p.cursor];
+    // TODO NEXT: orelse: try to parse custom command
     const cmd_args = get_commandlit_args(Node.L1Kind, inline_commandlit_argtable, cmd_name) orelse {
         return p.e.file_report(error.L1SyntaxError, true, "Unknown command name", null);
     };

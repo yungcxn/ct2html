@@ -27,6 +27,7 @@ l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
 outbuf: DynBuf(u8),
+stop_escaping: bool = false, // if true, we print ALL backslashes
 
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 responsemode: bool = false, // if true, we print the response header for HTML
@@ -56,8 +57,29 @@ pub fn init(
     };
 }
 
+// - nothing enters the final html file wihout going through this function
 pub inline fn print(self: *@This(), text: []const u8) void {
-    self.outbuf.append(text);
+    if (self.stop_escaping) {
+        self.outbuf.append(text);
+    } else {
+        var i: usize = 0;
+        var toprint0_at: usize = 0;
+        while (i < text.len) {
+            const c = text[i];
+            if (c == '\\' and i + 1 < text.len) {
+                self.outbuf.append(text[toprint0_at..i]);
+                i += 1; // skip the backslash
+                // text[i] is now the escaped char, leave it for the next flush
+                toprint0_at = i;
+                i += 1; // skip the escaped char itself, since it was printed
+                continue;
+            }
+            i += 1;
+        }
+        if (toprint0_at < text.len) {
+            self.outbuf.append(text[toprint0_at..]);
+        }
+    }
 }
 
 pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void {
@@ -80,6 +102,8 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
             @intFromEnum(l0node.kind),
         ) orelse return ErrorReporter.crash(GenError.L0NodeNotFound);
 
+        self.stop_escaping = l0_ri.stop_escaping;
+
         switch (l0_ri.pre_alg) {
             .constant => |pre| self.print(pre),
             .complex => |f| {
@@ -101,6 +125,8 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
                     @intFromEnum(l1node.kind),
                 ) orelse return ErrorReporter.crash(GenError.NoL1RuleForKind);
 
+                self.stop_escaping = l1_ri.stop_escaping;
+
                 var l1_inner_span: ?@Vector(2, usize) = l1node.span;
 
                 switch (l1_ri.pre_alg) {
@@ -120,6 +146,8 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
                 toprint0 = l1node.span[1] + l1node.margin[1];
             }
         }
+
+        self.stop_escaping = l0_ri.stop_escaping;
 
         // we assume here that this is the last print, which needs to be
         // from the last l1 node's end -- up until the end of the l0 node

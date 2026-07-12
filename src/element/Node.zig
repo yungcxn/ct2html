@@ -9,6 +9,11 @@ pub const L0 = struct {
     l1childhead: ?usize = null,
 
     contains_l1: bool = true,
+
+    // custom command nodes do not have enum kinds and need the identification
+    //   to be done through this field, whereas something like
+    //   `inl_cmd_link_0url` encodes command type (link) and the arg index
+    custom_command_id_arg: ?@Vector(2, u16) = null,
 };
 
 pub const L1 = struct {
@@ -22,6 +27,9 @@ pub const L1 = struct {
     l1_in_l1childhead: ?usize = null,
 
     l1_in_l1: bool = true,
+
+    // see above
+    custom_command_id_arg: ?@Vector(2, u16) = null,
 };
 
 pub const L0Kind = enum(u8) {
@@ -70,7 +78,7 @@ pub const L0Kind = enum(u8) {
     num_paren_item_label,
     num_paren_item_text,
 
-    // blockcommand section: @@commandname: // TODO!: for all special nodes, safety measures by type
+    // blockcommand section: @commandname: // TODO!: for all special nodes, safety measures by type
     blk_cmd_img_0src,
     blk_cmd_img_1size,
     blk_cmd_img_2caption,
@@ -81,11 +89,16 @@ pub const L0Kind = enum(u8) {
     blk_cmd_style_link,
     blk_cmd_script_link,
 
+    blk_custom_cmd_arg, // uses `L0.custom_command_id_arg`
+
     // attribute section
     style, // in head tag, unlike above
     script, // in head tag, unline above
     title,
     heading_icon,
+    custom_blk_cmd_def, // TODO NEXT they directly get into the attributor, get them in commandengine
+    custom_inl_cmd_def, // TODO NEXT
+
     abbreviation_def, // TODO!
 
     end,
@@ -129,6 +142,8 @@ pub const L1Kind = enum(u8) {
 
     inl_cmd_ar_text,
     inl_cmd_raw_text,
+
+    inl_custom_cmd_arg, // uses `L1.custom_command_id_arg`
 
     // TODO, datetime for under h1 in articles, should support the following styles:
     // 1. YYYY-MM-DD, 2. YYYY-MM-DD HH:mm, 3. YYYY-MM-DD HH:mm:ss
