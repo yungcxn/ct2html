@@ -12,7 +12,7 @@ fn test_for_file(filepath: []const u8) main.RunError!void {
 
     const in_file = filex.open(std.testing.io, cwd, filepath) catch crash("file open error");
 
-    if (main.run(
+    const text, const opterr = main.run(
         std.heap.smp_allocator,
         std.testing.io,
         cwd,
@@ -20,7 +20,12 @@ fn test_for_file(filepath: []const u8) main.RunError!void {
         false,
         false,
         false,
-    )[1]) |err| return err;
+    );
+
+    if (opterr) |err| {
+        std.log.info("{s}", .{text});
+        return err;
+    }
 }
 
 test "normal file" {
