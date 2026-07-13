@@ -17,9 +17,9 @@ inline fn generic_custom(comptime pre: bool, g: *Generator, node: *anyopaque) Ge
     };
 
     if (pre) {
-        g.print(g.textin[cmd_info.pre_spans[arg_id][0]..cmd_info.pre_spans[arg_id][1]]);
+        g.print_bs_esc(g.textin[cmd_info.pre_spans[arg_id][0]..cmd_info.pre_spans[arg_id][1]]);
     } else {
-        g.print(g.textin[cmd_info.post_spans[arg_id][0]..cmd_info.post_spans[arg_id][1]]);
+        g.print_bs_esc(g.textin[cmd_info.post_spans[arg_id][0]..cmd_info.post_spans[arg_id][1]]);
     }
 
     if (comptime pre) {

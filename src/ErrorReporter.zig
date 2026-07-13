@@ -189,7 +189,37 @@ fn println(self: *@This(), text: []const u8) void {
         self.outbuf.append(text);
     } else {
         self.outbuf.append("<p><code style=\"white-space: pre;\">");
-        self.outbuf.append(text);
+
+        var i: usize = 0;
+        var toprint0_at: usize = 0;
+        while (i < text.len) {
+            switch (text[i]) {
+                '<' => {
+                    self.outbuf.append(text[toprint0_at..i]);
+                    toprint0_at = i + 1;
+                    self.outbuf.append("&lt;");
+                },
+                '>' => {
+                    self.outbuf.append(text[toprint0_at..i]);
+                    toprint0_at = i + 1;
+                    self.outbuf.append("&gt;");
+                },
+                '&' => {
+                    self.outbuf.append(text[toprint0_at..i]);
+                    toprint0_at = i + 1;
+                    self.outbuf.append("&amp;");
+                },
+                '"' => {
+                    self.outbuf.append(text[toprint0_at..i]);
+                    toprint0_at = i + 1;
+                    self.outbuf.append("&quot;");
+                },
+                else => {},
+            }
+            i += 1;
+        }
+        if (toprint0_at < text.len) self.outbuf.append(text[toprint0_at..]);
+
         self.outbuf.append("</code></p>");
     }
     self.outbuf.append("\n");
@@ -206,13 +236,6 @@ fn parser_find_line_bounds(self: @This()) @Vector(2, usize) {
     const cursor_save = self.parser.?.cursor;
     defer self.parser.?.cursor = cursor_save;
 
-    // we expect to hit EOF, and since this is a generator function,
-    // we return null on end instead of propagating the error
-    var rbound_available = true;
-    self.parser.?.skip_whitesp() catch {
-        rbound_available = false;
-    };
-
     while (self.parser.?.cursor > 0) {
         self.parser.?.dec();
         if (self.parser.?.peek().? == '\n') {
@@ -222,18 +245,15 @@ fn parser_find_line_bounds(self: @This()) @Vector(2, usize) {
     }
     const lbound = self.parser.?.cursor;
 
-    var rbound: usize = undefined;
-    if (rbound_available) {
-        while (self.parser.?.pop()) |c| {
-            if (c == '\n') {
-                rbound = self.parser.?.cursor - 1;
-                return .{ lbound, rbound };
-            }
+    self.parser.?.cursor = cursor_save;
+
+    while (self.parser.?.pop()) |c| {
+        if (c == '\n') {
+            return .{ lbound, self.parser.?.cursor - 1 };
         }
     }
 
-    rbound = self.parser.?.text.len;
-    return .{ lbound, rbound };
+    return .{ lbound, self.parser.?.text.len };
 }
 
 fn parser_get_line_col(self: @This()) @Vector(2, usize) {

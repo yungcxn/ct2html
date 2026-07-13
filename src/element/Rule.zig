@@ -41,9 +41,9 @@ pub const L1Def = struct {
 // Nodes carry not only the text boundary but for attributes or commands,
 // sometimes something more complex is needed, therefore a text returning fn
 pub const GenDef = struct {
-    pre_alg: GenPreAlg,
-    post_alg: GenPostAlg,
-    stop_escaping: bool = false,
+    pre_alg: GenPreAlg, // this has bs_esc by default as escmode
+    post_alg: GenPostAlg, // this aswell
+    esc_mode: Generator.EscMode = .all_esc,
 
     const GenPreAlg = union(enum) {
         constant: []const u8,
@@ -55,7 +55,6 @@ pub const GenDef = struct {
         complex: GenPostFn,
     };
 
-    // TODO pass node instead of span
     const GenPreFn = *const fn (
         g: *Generator,
         node: *anyopaque,
@@ -66,7 +65,7 @@ pub const GenDef = struct {
         node: *anyopaque,
     ) Generator.GenError!void;
 
-    pub fn def(pre: anytype, post: anytype, stop_escaping: bool) GenDef {
+    pub fn def(pre: anytype, post: anytype, esc_mode: Generator.EscMode) GenDef {
         return .{
             .pre_alg = switch (@TypeOf(pre)) {
                 GenPreFn => .{ .complex = pre },
@@ -76,7 +75,7 @@ pub const GenDef = struct {
                 GenPostFn => .{ .complex = post },
                 else => .{ .constant = post },
             },
-            .stop_escaping = stop_escaping,
+            .esc_mode = esc_mode,
         };
     }
 };

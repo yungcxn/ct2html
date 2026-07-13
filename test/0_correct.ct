@@ -2,11 +2,17 @@
 !title:mytitle
 !blkdef:red,<p style="color: red;">,</p>
 !inldef:green,<span style="color: green;">,</span>
+!blkdef:rainbow,<p style="color: red;">,</p>,<p style="color: green;">,</p>,<p style="color: blue;">,</p>
+!inldef:testcmd,escaped\,text    ,   and-none-\\escaped-text
 @import(0_correct/base_attr.ct)
 
 # My title
 
 @red: This is a red block of text, with some @green(this is green)-text.
+
+@rainbow: lorem ipsum dolor sit amet, lorem ipsum dolor sit amet \, , lorem ipsum dolor sit amet
+
+(@testcmd(xx)).
 
 Here is some *bold-containing* text, and some **italic-containing** txt.
 ***both***,

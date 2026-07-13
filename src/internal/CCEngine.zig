@@ -177,14 +177,17 @@ pub fn new_cmd_def_from_attr(self: *@This(), node: Node.L0) Parser.ParsingError!
 
         // cursor was reset to start of <pre0>
         for (0..prepost_commac) |i| {
-            const prepost_start = def_cursor;
+            var prepost_start = def_cursor;
+            while (prepost_start < cmd_def_text.len and std.ascii.isWhitespace(cmd_def_text[prepost_start])) : (prepost_start += 1) {}
+
             last_c = 0;
             while (def_cursor < cmd_def_text.len) : (def_cursor += 1) {
                 const c = cmd_def_text[def_cursor];
                 if (c == ',' and last_c != '\\') break;
                 last_c = c;
             }
-            const prepost_end = def_cursor;
+            var prepost_end = def_cursor;
+            while (prepost_end > prepost_start and std.ascii.isWhitespace(cmd_def_text[prepost_end - 1])) : (prepost_end -= 1) {}
 
             const prepost_span = @Vector(2, usize){
                 cmd_def_span[0] + prepost_start,

@@ -253,7 +253,6 @@ fn generic_parse_cmd_args(
     cmd_name: []const u8,
     comptime generic_cmd_data_info: enum { l0, l1, custom_l0, custom_l1 },
     argc: usize,
-    // []Node.L0Kind or []Node.L1Kind or blkcmd id or inlcmd id -> all wrt `generic_cmd_data_info`
     generic_cmd_data: anytype,
     argareac: usize,
 ) Parser.ParsingError!void {
@@ -263,7 +262,7 @@ fn generic_parse_cmd_args(
     const prefix_len = "@".len + cmd_name.len + "(".len;
 
     var arg_start = p.cursor;
-    var left_margin: usize = prefix_len; // only the very first arg gets the "@name(" prefix
+    var left_margin: usize = prefix_len;
 
     var i: usize = 0;
     while (i < argc) : (i += 1) {
@@ -272,20 +271,35 @@ fn generic_parse_cmd_args(
         var whitesp_pre_next: usize = 0;
 
         if (!is_last) {
-            // only look for a comma if we still expect another argument after this one.
-            // any comma inside the *last* argument's span is just text and is never searched for.
-            const argi_c = p.bounded_findc(',', area_end) catch {
-                return p.e.file_report(error.CommandSyntaxError, true, "Missing comma in command arguments", null);
-            };
+            // scan for the next unescaped comma; skip escaped ones (\,) in place,
+            // using backslash-run parity so `\\,` (escaped backslash + real comma)
+            // is handled correctly, not just a single-char lookback
+            var argi_c: usize = 0;
+            while (true) {
+                argi_c += p.bounded_findc(',', area_end) catch {
+                    return p.e.file_report(error.CommandSyntaxError, true, .{ "Missing comma in command arguments, needed {d}", .{argc} }, null);
+                };
+                // cursor is on ','; count consecutive backslashes immediately before it
+                var bs_count: usize = 0;
+                var back = p.cursor;
+                while (back > arg_start and p.text[back - 1] == '\\') : (back -= 1) bs_count += 1;
+
+                if (bs_count % 2 == 0) break; // even (incl. 0) => not escaped, real delimiter
+
+                // odd => this comma is escaped, skip past it and keep searching
+                argi_c += 1;
+                p.inc();
+            }
+
             if (argi_c == 0) {
-                return p.e.file_report(error.CommandSyntaxError, true, "Missing argument in command", null);
+                return p.e.file_report(error.CommandSyntaxError, true, .{ "Missing argument in command, needed {d}", .{argc} }, null);
             }
             arg_end = arg_start + argi_c;
 
             p.inc(); // step past the comma
 
             p.bounded_skip_whitesp(area_end) catch {
-                return p.e.file_report(error.CommandSyntaxError, true, "Missing next argument in command", null);
+                return p.e.file_report(error.CommandSyntaxError, true, .{ "Missing next argument in command, needed {d}", .{argc} }, null);
             };
 
             const next_arg_start = p.cursor;

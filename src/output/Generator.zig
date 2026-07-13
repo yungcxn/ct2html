@@ -29,7 +29,6 @@ l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
 outbuf: DynBuf(u8),
-stop_escaping: bool = false, // if true, we print ALL backslashes
 
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 responsemode: bool = false, // if true, we print the response header for HTML
@@ -61,33 +60,82 @@ pub fn init(
     };
 }
 
-// - nothing enters the final html file wihout going through this function
-pub inline fn print(self: *@This(), text: []const u8) void {
-    if (self.stop_escaping) {
-        self.outbuf.append(text);
-    } else {
-        var i: usize = 0;
-        var toprint0_at: usize = 0;
-        while (i < text.len) {
-            const c = text[i];
-            if (c == '\\' and i + 1 < text.len) {
-                self.outbuf.append(text[toprint0_at..i]);
-                i += 1; // skip the backslash
-                // text[i] is now the escaped char, leave it for the next flush
-                toprint0_at = i;
-                i += 1; // skip the escaped char itself, since it was printed
-                continue;
-            }
-            i += 1;
-        }
-        if (toprint0_at < text.len) {
-            self.outbuf.append(text[toprint0_at..]);
-        }
+pub const EscMode = enum { bs_esc, html_esc, all_esc, direct };
+
+/// Unified print: escaping behavior is selected at comptime via `mode`,
+/// so each call site gets a specialized, branch-free version of this
+/// function just like the original hand-written ones.
+pub inline fn print(self: *@This(), mode: EscMode, text: []const u8) void {
+    if (mode == .direct) {
+        self.print_direct(text);
+        return;
     }
+
+    var i: usize = 0;
+    var toprint0_at: usize = 0;
+    while (i < text.len) {
+        const c = text[i];
+
+        if ((mode == .bs_esc or mode == .all_esc) and c == '\\' and i + 1 < text.len) {
+            self.print_direct(text[toprint0_at..i]);
+            i += 1; // skip the backslash
+            if (mode == .all_esc) {
+                // escaped char printed as-is immediately (never html-escaped)
+                self.print_direct(text[i .. i + 1]);
+                i += 1;
+                toprint0_at = i;
+            } else {
+                // bs_esc: leave escaped char for the next flush
+                toprint0_at = i;
+                i += 1;
+            }
+            continue;
+        }
+
+        if (mode == .html_esc or mode == .all_esc) {
+            switch (c) {
+                '<' => {
+                    self.print_direct(text[toprint0_at..i]);
+                    toprint0_at = i + 1;
+                    self.print_direct("&lt;");
+                },
+                '>' => {
+                    self.print_direct(text[toprint0_at..i]);
+                    toprint0_at = i + 1;
+                    self.print_direct("&gt;");
+                },
+                '&' => {
+                    self.print_direct(text[toprint0_at..i]);
+                    toprint0_at = i + 1;
+                    self.print_direct("&amp;");
+                },
+                '"' => {
+                    self.print_direct(text[toprint0_at..i]);
+                    toprint0_at = i + 1;
+                    self.print_direct("&quot;");
+                },
+                else => {},
+            }
+        }
+        i += 1;
+    }
+    if (toprint0_at < text.len) self.print_direct(text[toprint0_at..]);
 }
 
-pub inline fn print_span(self: *@This(), textstart: usize, textend: usize) void {
-    self.print(self.textin[textstart..textend]);
+pub inline fn print_direct(self: *@This(), text: []const u8) void {
+    self.outbuf.append(text);
+}
+
+pub inline fn print_bs_esc(self: *@This(), text: []const u8) void {
+    self.print(.bs_esc, text);
+}
+
+pub inline fn print_html_esc(self: *@This(), text: []const u8) void {
+    self.print(.html_esc, text);
+}
+
+pub inline fn print_all_esc(self: *@This(), text: []const u8) void {
+    self.print(.all_esc, text);
 }
 
 // TODO beautify out by indenting
@@ -106,10 +154,8 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
             @intFromEnum(l0node.kind),
         ) orelse return ErrorReporter.crash(GenError.L0NodeNotFound);
 
-        self.stop_escaping = l0_ri.stop_escaping;
-
         switch (l0_ri.pre_alg) {
-            .constant => |pre| self.print(pre),
+            .constant => |pre| self.print_bs_esc(pre),
             .complex => |f| {
                 l0span = try f(self, @ptrCast(@constCast(&l0node)));
             },
@@ -123,27 +169,25 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         // post text and continue to the next l0
         if (toprint0 != null and l0node.l1childhead != null and l0node.l1child0 != null) {
             for (self.l1nodes.slice_view()[l0node.l1child0.?..l0node.l1childhead.?]) |l1node| {
-                self.stop_escaping = l0_ri.stop_escaping;
-                self.print_span(toprint0.?, l1node.span[0] - l1node.margin[0]);
+                self.print(l0_ri.esc_mode, self.textin[toprint0.? .. l1node.span[0] - l1node.margin[0]]);
 
                 const l1_ri = gen_rules.datatable.lookup(
                     @intFromEnum(l1node.kind),
                 ) orelse return ErrorReporter.crash(GenError.NoL1RuleForKind);
 
-                self.stop_escaping = l1_ri.stop_escaping;
                 var l1_inner_span: ?@Vector(2, usize) = l1node.span;
 
                 switch (l1_ri.pre_alg) {
-                    .constant => |pre| self.print(pre),
+                    .constant => |pre| self.print_bs_esc(pre),
                     .complex => |f| {
                         l1_inner_span = try f(self, @ptrCast(@constCast(&l1node)));
                     },
                 }
 
-                if (l1_inner_span != null) self.print_span(l1_inner_span.?[0], l1_inner_span.?[1]); // TODO
+                if (l1_inner_span != null) self.print(l1_ri.esc_mode, self.textin[l1_inner_span.?[0]..l1_inner_span.?[1]]);
 
                 switch (l1_ri.post_alg) {
-                    .constant => |post| self.print(post),
+                    .constant => |post| self.print_bs_esc(post),
                     .complex => |f| try f(self, @ptrCast(@constCast(&l1node))),
                 }
 
@@ -151,17 +195,15 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
             }
         }
 
-        self.stop_escaping = l0_ri.stop_escaping;
-
         // we assume here that this is the last print, which needs to be
         // from the last l1 node's end -- up until the end of the l0 node
         if (toprint0 != null) {
-            self.print_span(toprint0.?, l0span.?[1]);
+            self.print(l0_ri.esc_mode, self.textin[toprint0.?..l0span.?[1]]);
         }
 
         // post action
         switch (l0_ri.post_alg) {
-            .constant => |post| self.print(post),
+            .constant => |post| self.print_bs_esc(post),
             .complex => |f| try f(self, @ptrCast(@constCast(&l0node))),
         }
     }
