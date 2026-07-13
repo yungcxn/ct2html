@@ -13,7 +13,7 @@ pub const L0 = struct {
     // custom command nodes do not have enum kinds and need the identification
     //   to be done through this field, whereas something like
     //   `inl_cmd_link_0url` encodes command type (link) and the arg index
-    custom_command_id_arg: ?@Vector(2, u16) = null,
+    custom_command_id_arg: ?@Vector(2, usize) = null,
 };
 
 pub const L1 = struct {
@@ -29,7 +29,7 @@ pub const L1 = struct {
     l1_in_l1: bool = true,
 
     // see above
-    custom_command_id_arg: ?@Vector(2, u16) = null,
+    custom_command_id_arg: ?@Vector(2, usize) = null,
 };
 
 pub const L0Kind = enum(u8) {
@@ -96,10 +96,10 @@ pub const L0Kind = enum(u8) {
     script, // in head tag, unline above
     title,
     heading_icon,
-    custom_blk_cmd_def, // TODO NEXT they directly get into the attributor, get them in commandengine
-    custom_inl_cmd_def, // TODO NEXT
+    blkdef, // this and his brother below get used by `CommandEngine`
+    inldef,
 
-    abbreviation_def, // TODO!
+    abbreviation_def, // TODO! like env vars with $
 
     end,
 };
@@ -118,8 +118,6 @@ pub const L1Kind = enum(u8) {
     strikethrough_bold_italic,
 
     abbreviation, // TODO! with custom trigger letter
-
-    math, // TODO with $
 
     // - inline command section: @command(...)
     // - no overloading!

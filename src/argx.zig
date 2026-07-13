@@ -185,7 +185,7 @@ fn typeLabel(comptime T: type) []const u8 {
 }
 
 pub fn print_help(comptime argdef_tuple: anytype) void {
-    const w = std.debug.print;
+    const w = std.log.debug;
 
     w("Usage:\n", .{});
     w("  -h, --help              Show this help message\n", .{});

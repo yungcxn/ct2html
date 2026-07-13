@@ -9,6 +9,7 @@ pub fn DynBuf(T: type) type {
         cap: usize,
 
         pub fn init(alloc: std.mem.Allocator, start_cap: usize) DynBuf(T) {
+            if (start_cap == 0) crash(error.StartCapZeroNotAllowed);
             return DynBuf(T){
                 .alloc = alloc,
                 .buf = alloc.alloc(T, start_cap) catch crash(error.OOM),

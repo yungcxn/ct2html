@@ -3,8 +3,9 @@ const Node = @import("../element/Node.zig");
 const Rule = @import("../element/Rule.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
-const html_rules = @import("html_rules.zig");
+const gen_rules = @import("gen_rules.zig");
 const Attributor = @import("../internal/Attributor.zig");
+const CCEngine = @import("../internal/CCEngine.zig");
 const crash = ErrorReporter.crash;
 
 pub const GenError = error{
@@ -20,6 +21,7 @@ alloc: std.mem.Allocator, // for rule functions to alloc and dealloc, not direct
 io: std.Io, // for logging and writing to file
 e: *ErrorReporter,
 attributor: *Attributor,
+custom_cmd_engine: *CCEngine, // for command engine to run commands and get their output
 
 textin: []const u8, // borrowed from parser
 
@@ -37,6 +39,7 @@ pub fn init(
     io: std.Io,
     e: *ErrorReporter,
     attributor: *Attributor,
+    custom_cmd_engine: *CCEngine,
     textin: []const u8,
     l0nodes: DynBuf(Node.L0),
     l1nodes: DynBuf(Node.L1),
@@ -48,6 +51,7 @@ pub fn init(
         .io = io,
         .e = e,
         .attributor = attributor,
+        .custom_cmd_engine = custom_cmd_engine,
         .textin = textin,
         .l0nodes = l0nodes,
         .l1nodes = l1nodes,
@@ -98,7 +102,7 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         // -> we continue and run the defered print of post text
         var l0span: ?@Vector(2, usize) = l0node.span;
 
-        const l0_ri = html_rules.datatable.lookup(
+        const l0_ri = gen_rules.datatable.lookup(
             @intFromEnum(l0node.kind),
         ) orelse return ErrorReporter.crash(GenError.L0NodeNotFound);
 
@@ -119,14 +123,14 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         // post text and continue to the next l0
         if (toprint0 != null and l0node.l1childhead != null and l0node.l1child0 != null) {
             for (self.l1nodes.slice_view()[l0node.l1child0.?..l0node.l1childhead.?]) |l1node| {
+                self.stop_escaping = l0_ri.stop_escaping;
                 self.print_span(toprint0.?, l1node.span[0] - l1node.margin[0]);
 
-                const l1_ri = html_rules.datatable.lookup(
+                const l1_ri = gen_rules.datatable.lookup(
                     @intFromEnum(l1node.kind),
                 ) orelse return ErrorReporter.crash(GenError.NoL1RuleForKind);
 
                 self.stop_escaping = l1_ri.stop_escaping;
-
                 var l1_inner_span: ?@Vector(2, usize) = l1node.span;
 
                 switch (l1_ri.pre_alg) {

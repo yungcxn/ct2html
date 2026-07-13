@@ -5,8 +5,8 @@ const Node = @import("../element/Node.zig");
 const Parser = @import("Parser.zig");
 const Rule = @import("../element/Rule.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
-const CommandEngine = @import("../internal/CommandEngine.zig");
 const hack = @import("../hack.zig");
+const allcmd_rules = @import("special/allcmd_rules.zig");
 
 const L0SyntaxError = Parser.ParsingError.L0SyntaxError;
 const file_report = @import("../ErrorReporter.zig").file_report;
@@ -33,7 +33,7 @@ pub const datatable = hack.StructByteMap(.{
         '9',
     }, Rule.L0Def.def(&num_items, .ordered_list_begin, .ordered_list_end, false) },
 
-    .{ .{'@'}, Rule.L0Def.def(&CommandEngine.l0_parse_block_command, null, null, false) },
+    .{ .{'@'}, Rule.L0Def.def(&allcmd_rules.l0_parse_block_command, null, null, false) },
 
     // this is special: head_anchor gets released, but attributes not. then later at generation,
     //   throught the attribute handler, some get written into it
@@ -77,7 +77,7 @@ fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFina
         p.bounded_find('\n', endat) catch |err| {
             if (err == Parser.ParsingError.OutOfBounds) {
                 // last line, so must accept it
-                p.attributor.push(.{
+                try p.attributor.push(.{
                     .kind = attr_kind,
                     .span = .{ value_start, endat },
                     .contains_l1 = false,
@@ -89,7 +89,7 @@ fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFina
         };
 
         // cursor is on '\n'
-        p.attributor.push(.{
+        try p.attributor.push(.{
             .kind = attr_kind,
             .span = .{ value_start, p.cursor },
             .contains_l1 = false,

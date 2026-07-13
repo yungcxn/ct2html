@@ -2,6 +2,7 @@ const std = @import("std");
 const Generator = @import("Generator.zig");
 const Node = @import("../element/Node.zig");
 const Rule = @import("../element/Rule.zig");
+const cc_rules = @import("special/cc_rules.zig");
 const hack = @import("../hack.zig");
 const crash = @import("../ErrorReporter.zig").crash;
 
@@ -156,6 +157,10 @@ pub const datatable = hack.StructByteMap(.{
         .{Node.L0Kind.blk_cmd_footer_text},
         Rule.GenDef.def("<footer>", "</footer>", false),
     },
+    .{
+        .{Node.L0Kind.blk_custom_cmd_arg},
+        Rule.GenDef.def(&cc_rules.custom_pre, &cc_rules.custom_post, false),
+    },
 
     // L1
     .{
@@ -240,6 +245,10 @@ pub const datatable = hack.StructByteMap(.{
         .{Node.L1Kind.inl_cmd_fs_1text},
         Rule.GenDef.def("", "</span>", false),
     },
+    .{
+        .{Node.L1Kind.inl_custom_cmd_arg},
+        Rule.GenDef.def(&cc_rules.custom_pre, &cc_rules.custom_post, false),
+    },
 }).init();
 
 // for those attributes that get generated into the head section
@@ -311,95 +320,4 @@ fn generic_pre_anchored_heading(
     }
 
     return span;
-}
-
-fn pre_command_img(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
-    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
-    const span = realnode.span;
-
-    if (span == null) crash(error.NullSpan);
-
-    var commas: [2]usize = .{ 0, 0 };
-    var postcomma_argstarts: [2]usize = .{ 0, 0 };
-    var commac: usize = 0;
-    var last_c: usize = 0;
-    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
-        if (c == ',') {
-            if (last_c == '\\') continue;
-
-            for (g.textin[span.?[0] + i + 1 .. span.?[1]], i + 1..) |c2, j| {
-                if (c2 != ' ' and c2 != '\t') {
-                    postcomma_argstarts[commac] = j;
-                    break;
-                }
-            }
-
-            commas[commac] = i;
-            commac += 1;
-            if (commac >= 2) break;
-        }
-        last_c = c;
-    }
-
-    if (commac == 0) {
-        g.print("<img src=\"");
-        g.print_span(span.?[0], span.?[1]);
-        g.print("\" alt=\"");
-        g.print_span(span.?[0], span.?[1]);
-        g.print("\"></figure>");
-        return null; // just the link
-    }
-
-    if (commac == 1) {
-        g.print("<figure><img src=\"");
-        g.print_span(span.?[0], span.?[0] + commas[0]);
-        g.print("\" alt=\"");
-        return @Vector(2, usize){ span.?[0] + postcomma_argstarts[0], span.?[1] };
-    }
-
-    if (commac == 2) {
-        g.print("<figure><img src=\"");
-        g.print_span(span.?[0], span.?[0] + commas[0]);
-        g.print("\" style=\"width:");
-        g.print_span(span.?[0] + postcomma_argstarts[0], span.?[0] + commas[1]);
-        g.print("; height: auto;\" alt=\"");
-        g.print_span(span.?[0] + postcomma_argstarts[1], span.?[1]);
-        g.print("\"><figcaption>");
-        return @Vector(2, usize){ span.?[0] + postcomma_argstarts[1], span.?[1] };
-    }
-
-    unreachable;
-}
-
-fn post_command_img(g: *Generator, node: *anyopaque) Generator.GenError!void {
-    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
-    const span = realnode.span;
-
-    if (span == null) crash(error.NullSpan);
-
-    var commas: [2]usize = .{ 0, 0 };
-    var postcomma_argstarts: [2]usize = .{ 0, 0 };
-    var commac: usize = 0;
-    var last_c: usize = 0;
-    for (g.textin[span.?[0]..span.?[1]], 0..) |c, i| {
-        if (c == ',') {
-            if (last_c == '\\') continue;
-
-            for (g.textin[span.?[0] + i + 1 .. span.?[1]], i + 1..) |c2, j| {
-                if (c2 != ' ' and c2 != '\t') {
-                    postcomma_argstarts[commac] = j;
-                    break;
-                }
-            }
-
-            commas[commac] = i;
-            commac += 1;
-            if (commac >= 2) break;
-        }
-        last_c = c;
-    }
-
-    if (commac == 1 or commac == 2) {
-        g.print("</figcaption></figure>");
-    } // else nothing, since we already printed it.
 }

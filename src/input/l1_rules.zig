@@ -4,14 +4,14 @@ const std = @import("std");
 const Node = @import("../element/Node.zig");
 const Rule = @import("../element/Rule.zig");
 const Parser = @import("Parser.zig");
-const CommandEngine = @import("../internal/CommandEngine.zig");
+const allcmd_rules = @import("special/allcmd_rules.zig");
 const hack = @import("../hack.zig");
 const L1SyntaxError = Parser.ParsingError.L1SyntaxError;
 const file_report = @import("../ErrorReporter.zig").file_report;
 const crash = @import("../ErrorReporter.zig").crash;
 
 pub const datatable = hack.StructByteMap(.{
-    .{ .{'@'}, Rule.L1Def.def(&CommandEngine.l1_parse_inline_command) },
+    .{ .{'@'}, Rule.L1Def.def(&allcmd_rules.l1_parse_inline_command) },
     .{ .{'`'}, Rule.L1Def.def(&inline_code) },
     .{ .{'*'}, Rule.L1Def.def(&bold_and_sons) },
     .{ .{'_'}, Rule.L1Def.def(&strikethrough_and_sons) },

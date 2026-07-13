@@ -1,99 +1,20 @@
 const std = @import("std");
-const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
-const Node = @import("../element/Node.zig");
-const Rule = @import("../element/Rule.zig");
-const Parser = @import("../input/Parser.zig");
+const Parser = @import("../Parser.zig");
+const Rule = @import("../../element/Rule.zig");
+const Node = @import("../../element/Node.zig");
+const CCEngine = @import("../../internal/CCEngine.zig");
 const L0SyntaxError = Parser.ParsingError.L0SyntaxError;
-const crash = @import("../ErrorReporter.zig").crash;
-const par = @import("../input/l0_rules.zig").par;
-
-// custom commands through attributes, should be for l1 and l0
-// since we parsing attributes is the first optional step during parsing, we
-//   can generate custom commands for l0 and l1.
-// because standard commands also may be complex (through running functions),
-//   they get treated differently and are being handled in the `Generator`
-//
-// and the idx corresponds to the COMMAND-ID (important to grasp their generation)
-custom_cmd_table: DynBuf(CustomCommandInfo),
-alloc: std.mem.Allocator,
-
-pub fn init(alloc: std.mem.Allocator) @This() {
-    return @This(){
-        .custom_cmd_table = .init(alloc, 0),
-    };
-}
-
-pub fn deinit(self: *@This()) void {
-    for (self.custom_cmd_table.slice_view()) |cmd| {
-        cmd.deinit(self.alloc);
-    }
-    self.custom_cmd_table.deinit(self.alloc);
-}
-
-pub fn new_custom_command(
-    self: *@This(),
-    alloc: std.mem.Allocator,
-    literal: []const u8,
-    argc: usize,
-) !usize { // returns the command id, which gets inserted into the node
-    const idx = self.custom_cmd_table.len;
-    const cmdinfo = CustomCommandInfo.init(alloc, literal, argc);
-    try self.custom_cmd_table.append(cmdinfo);
-    return idx;
-}
-
-pub const CustomCommandInfo = struct {
-    literal: []const u8,
-    argc: usize,
-    pres: [][]u8, // for each arg
-    posts: [][]u8, // for each arg
-
-    pub fn init(
-        alloc: std.mem.Allocator,
-        literal: []const u8,
-        argc: usize,
-    ) CustomCommandInfo {
-        return CustomCommandInfo{
-            .literal = literal,
-            .argc = argc,
-            .pres = alloc.alloc([]u8, argc) catch crash(error.OOM),
-            .posts = alloc.alloc([]u8, argc) catch crash(error.OOM),
-        };
-    }
-
-    // we own the pres and posts due to the preprocessed text to be free'd early
-    pub fn set_pre_post(
-        self: *CustomCommandInfo,
-        alloc: std.mem.Allocator,
-        arg_idx: usize,
-        pre: []const u8,
-        post: []const u8,
-    ) !void {
-        if (arg_idx >= self.argc) {
-            return error.InvalidArgument;
-        }
-        self.pres[arg_idx] = alloc.dupe(u8, pre) catch crash(error.OOM);
-        self.posts[arg_idx] = alloc.dupe(u8, post) catch crash(error.OOM);
-    }
-
-    // we do not need to store an additional alloc pointer for many of `@This()`
-    pub fn deinit(self: *CustomCommandInfo, alloc: std.mem.Allocator) void {
-        for (self.argc) |i| {
-            alloc.free(self.pres[i]);
-            alloc.free(self.posts[i]);
-        }
-        alloc.free(self.pres);
-        alloc.free(self.posts);
-    }
-};
+const ErrorReporter = @import("../../ErrorReporter.zig");
+const crash = @import("../../ErrorReporter.zig").crash;
+const par = @import("../l0_rules.zig").par;
 
 // here we construct the `commandlit_argtable`, through l1 `inl_cmd_<literal>_*`
 //                                           OR through l0 `blk_cmd_<literal>_*`
 // row-format: { lit_string, .{arg0_kind, arg1_kind, ...} }
-const block_commandlit_argtable = commandlit_argtable_init(Node.L0Kind, "blk_cmd_");
-const inline_commandlit_argtable = commandlit_argtable_init(Node.L1Kind, "inl_cmd_");
+const builtin_blk_cmdlit_argtbl = init_builtin_cmdlit_argtable(Node.L0Kind, "blk_cmd_");
+const builtin_inl_cmdlit_argtbl = init_builtin_cmdlit_argtable(Node.L1Kind, "inl_cmd_");
 
-fn get_commandlit_args(
+fn get_builtin_cmdlit_args(
     comptime Enum: type,
     comptime commandlit_argtable: anytype,
     lit: []const u8,
@@ -106,7 +27,7 @@ fn get_commandlit_args(
     return null;
 }
 
-fn commandlit_argtable_init(
+fn init_builtin_cmdlit_argtable(
     comptime Enum: type,
     comptime name_prefix: []const u8,
 ) []const struct { []const u8, []const Enum } {
@@ -165,7 +86,7 @@ pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule
         return .transitioned;
     }
 
-    const blockcmd_name_start = p.cursor;
+    const blkcmd_name_start = p.cursor;
 
     p.bounded_find(':', endat) catch {
         // same as above
@@ -174,45 +95,20 @@ pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule
         return .transitioned;
     };
 
+    const blkcmd_name_end = p.cursor;
+
     // cursor is on ':', so we check if the blockcommand name is free of whitespace
-    if (!p.bounds_freeof_whitesp(blockcmd_name_start, p.cursor)) {
+    if (!p.bounds_freeof_whitesp(blkcmd_name_start, blkcmd_name_end)) {
         return p.e.file_report(L0SyntaxError, true, "Space between blockcommand name and colon", null);
     }
 
-    if (!p.bounds_freeof(blockcmd_name_start, p.cursor, '(')) {
+    if (!p.bounds_freeof(blkcmd_name_start, blkcmd_name_end, '(')) {
         // we possibly have a l1 inline command that has somewhere in that line
         //   a colon, therefore we fall back to `par` gain
         p.cursor = start;
         _ = par(p, endat) catch |err| return err;
         return .transitioned;
     }
-
-    // TODO NEXT: orelse: try to parse custom command
-    const blockcmd_name = p.text[blockcmd_name_start..p.cursor];
-    const blockcmd_args = get_commandlit_args(Node.L0Kind, block_commandlit_argtable, blockcmd_name) orelse {
-        const known_blockcmds = comptime blk: {
-            var list: []const []const u8 = &.{};
-            for (block_commandlit_argtable) |row| {
-                list = list ++ .{row[0]};
-            }
-            break :blk list;
-        };
-
-        const known_blockcmds_str = comptime blk: {
-            var list: []const u8 = &.{};
-            for (known_blockcmds) |name| {
-                list = list ++ name ++ ", ";
-            }
-            break :blk list;
-        };
-
-        return p.e.file_report(
-            L0SyntaxError,
-            true,
-            .{ "Unknown blockcommand name, choose from: {s}", .{known_blockcmds_str} },
-            null,
-        );
-    };
 
     // cursor is at ':'...
     p.inc();
@@ -224,14 +120,39 @@ pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule
         return p.e.file_report(error.L1SyntaxError, true, "Missing command argument", null);
     }
 
-    _ = try generic_parse_command_args(
-        p,
-        blockcmd_name,
-        blockcmd_args,
-        argareac,
-    );
+    const blkcmd_name = p.text[blkcmd_name_start..blkcmd_name_end];
 
-    return .success;
+    if (get_builtin_cmdlit_args(Node.L0Kind, builtin_blk_cmdlit_argtbl, blkcmd_name)) |builtin_blkcmd_argtup| {
+        try generic_parse_cmd_args(p, blkcmd_name, .l0, builtin_blkcmd_argtup.len, builtin_blkcmd_argtup, argareac);
+        return .success;
+    }
+
+    if (p.custom_cmd_engine.get_custom_cmd_by_literal(true, @Vector(2, usize){ blkcmd_name_start, blkcmd_name_end })) |custom_cmd_info| {
+        try generic_parse_cmd_args(p, blkcmd_name, .custom_l0, custom_cmd_info.argc, custom_cmd_info.id, argareac);
+        return .success;
+    }
+
+    // error case when there is no builtin and no custom command found
+    const known_builtin_blkcmds_str = comptime blk: {
+        var list: []const u8 = &.{};
+        for (builtin_blk_cmdlit_argtbl) |row| {
+            list = list ++ row[0] ++ ", ";
+        }
+        break :blk list;
+    };
+
+    const known_custom_blkcmd_info = p.custom_cmd_engine.alloc_debug_cmd_list(true);
+    defer p.custom_cmd_engine.alloc.free(known_custom_blkcmd_info);
+
+    return p.e.file_report(
+        L0SyntaxError,
+        true,
+        .{
+            "Unknown block-command: \"{s}\", choose from:\n- BUILTIN: {s}\n- CUSTOM: {s}",
+            .{ blkcmd_name, known_builtin_blkcmds_str, known_custom_blkcmd_info },
+        },
+        null,
+    );
 }
 
 // [L1 RULE]
@@ -239,28 +160,26 @@ pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule
 //   but we took advantage of p being available to push the arg nodes "under the hood".
 pub fn l1_parse_inline_command(p: *Parser, endat: usize) Parser.ParsingError!usize {
     // we only accept commands of type @key(arg), while having cursor on @+1
-    const name_start = p.cursor;
+    const inlcmd_name_start = p.cursor;
 
     const namec = p.bounded_findc('(', endat) catch {
         return p.e.file_report(error.L1SyntaxError, true, "Missing command name", null);
     };
+
+    const inlcmd_name_end = p.cursor;
 
     if (namec == 0) {
         return p.e.file_report(error.L1SyntaxError, true, "Missing command name", null);
     }
 
     // cursor is on '('
-    if (!p.bounds_freeof_whitesp(name_start, p.cursor)) {
+    if (!p.bounds_freeof_whitesp(inlcmd_name_start, p.cursor)) {
         return p.e.file_report(error.L1SyntaxError, true, "White space in command name not allowed", null);
     }
 
-    const cmd_name = p.text[name_start..p.cursor];
-    // TODO NEXT: orelse: try to parse custom command
-    const cmd_args = get_commandlit_args(Node.L1Kind, inline_commandlit_argtable, cmd_name) orelse {
-        return p.e.file_report(error.L1SyntaxError, true, "Unknown command name", null);
-    };
-
     p.inc(); // cursor is now on first letter of arg
+
+    const argarea0_at = p.cursor;
 
     var argareac: usize = 0;
     while (true) {
@@ -284,37 +203,61 @@ pub fn l1_parse_inline_command(p: *Parser, endat: usize) Parser.ParsingError!usi
 
     // cursor is on ')', and it will be restored after the following block,
     //   so we just need to incr once to be on first char after ')'
-    defer p.inc();
-    var nodes_pushed: usize = 0;
-    {
+    p.inc();
+    const cursor_postall_save = p.cursor;
+    defer p.cursor = cursor_postall_save; // to be back on the first char after ')'
+
+    p.cursor = argarea0_at;
+
+    const inlcmd_name = p.text[inlcmd_name_start..inlcmd_name_end];
+    if (get_builtin_cmdlit_args(Node.L1Kind, builtin_inl_cmdlit_argtbl, inlcmd_name)) |builtin_inlcmd_argtup| {
         const cursor_save = p.cursor;
-        p.cursor = p.cursor - argareac;
+        defer p.cursor = cursor_save; // to be back on the first char after ')'
 
-        nodes_pushed = try generic_parse_command_args(
-            p,
-            cmd_name,
-            cmd_args,
-            argareac,
-        );
+        p.cursor = argarea0_at;
 
-        p.cursor = cursor_save;
+        try generic_parse_cmd_args(p, inlcmd_name, .l1, builtin_inlcmd_argtup.len, builtin_inlcmd_argtup, argareac);
+        return builtin_inlcmd_argtup.len;
     }
 
-    return nodes_pushed;
+    if (p.custom_cmd_engine.get_custom_cmd_by_literal(false, @Vector(2, usize){ inlcmd_name_start, inlcmd_name_end })) |custom_cmd_info| {
+        try generic_parse_cmd_args(p, inlcmd_name, .custom_l1, custom_cmd_info.argc, custom_cmd_info.id, argareac);
+        return custom_cmd_info.argc;
+    }
+
+    // error case when there is no builtin and no custom command found
+    const known_builtin_inlcmds_str = comptime blk: {
+        var list: []const u8 = &.{};
+        for (builtin_inl_cmdlit_argtbl) |row| {
+            list = list ++ row[0] ++ ", ";
+        }
+        break :blk list;
+    };
+
+    const known_custom_inlcmd_info = p.custom_cmd_engine.alloc_debug_cmd_list(false);
+    defer p.custom_cmd_engine.alloc.free(known_custom_inlcmd_info);
+
+    return p.e.file_report(
+        L0SyntaxError,
+        true,
+        .{
+            "Unknown inline-command: \"{s}\", choose from:\n- BUILTIN: {s}\n- CUSTOM: {s}",
+            .{ inlcmd_name, known_builtin_inlcmds_str, known_custom_inlcmd_info },
+        },
+        null,
+    );
 }
 
-fn generic_parse_command_args(
+fn generic_parse_cmd_args(
     p: *Parser,
     cmd_name: []const u8,
-    cmd_args: anytype, // []Node.L0Kind or []Node.L1Kind
+    comptime generic_cmd_data_info: enum { l0, l1, custom_l0, custom_l1 },
+    argc: usize,
+    // []Node.L0Kind or []Node.L1Kind or blkcmd id or inlcmd id -> all wrt `generic_cmd_data_info`
+    generic_cmd_data: anytype,
     argareac: usize,
-) Parser.ParsingError!usize {
-    const n = cmd_args.len;
-    if (n == 0) crash("Unsupported number of command arguments");
-
-    const is_l0 = comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L0Kind;
-    const is_l1 = comptime @typeInfo(@TypeOf(cmd_args)).pointer.child == Node.L1Kind;
-    if (!is_l0 and !is_l1) @compileError("cmd_args must be []Node.L0Kind or []Node.L1Kind");
+) Parser.ParsingError!void {
+    if (argc == 0) crash("generic_parse_cmd_args called with argc=0, which is not allowed");
 
     const area_end = p.cursor + argareac;
     const prefix_len = "@".len + cmd_name.len + "(".len;
@@ -323,21 +266,21 @@ fn generic_parse_command_args(
     var left_margin: usize = prefix_len; // only the very first arg gets the "@name(" prefix
 
     var i: usize = 0;
-    while (i < n) : (i += 1) {
-        const is_last = (i == n - 1);
+    while (i < argc) : (i += 1) {
+        const is_last = (i == argc - 1);
         var arg_end: usize = undefined;
         var whitesp_pre_next: usize = 0;
 
         if (!is_last) {
             // only look for a comma if we still expect another argument after this one.
             // any comma inside the *last* argument's span is just text and is never searched for.
-            const argc = p.bounded_findc(',', area_end) catch {
+            const argi_c = p.bounded_findc(',', area_end) catch {
                 return p.e.file_report(error.CommandSyntaxError, true, "Missing comma in command arguments", null);
             };
-            if (argc == 0) {
+            if (argi_c == 0) {
                 return p.e.file_report(error.CommandSyntaxError, true, "Missing argument in command", null);
             }
-            arg_end = arg_start + argc;
+            arg_end = arg_start + argi_c;
 
             p.inc(); // step past the comma
 
@@ -353,18 +296,35 @@ fn generic_parse_command_args(
 
         const right_margin: usize = if (is_last) ")".len else ",".len;
 
-        if (is_l0) {
-            p.l0nodes.push(Node.L0{
-                .kind = cmd_args[i],
+        switch (generic_cmd_data_info) {
+            .l0 => p.l0nodes.push(Node.L0{
+                .kind = generic_cmd_data[i],
                 .span = .{ arg_start, arg_end },
                 .contains_l1 = true,
-            });
-        } else {
-            p.l1nodes.push(Node.L1{
-                .kind = cmd_args[i],
+            }),
+            .l1 => p.l1nodes.push(Node.L1{
+                .kind = generic_cmd_data[i],
                 .span = .{ arg_start, arg_end },
                 .margin = .{ left_margin, right_margin },
-            });
+            }),
+            .custom_l0 => {
+                const cmd_id = generic_cmd_data;
+                p.l0nodes.push(Node.L0{
+                    .kind = .blk_custom_cmd_arg,
+                    .span = .{ arg_start, arg_end },
+                    .contains_l1 = true,
+                    .custom_command_id_arg = .{ cmd_id, i },
+                });
+            },
+            .custom_l1 => {
+                const cmd_id = generic_cmd_data;
+                p.l1nodes.push(Node.L1{
+                    .kind = .inl_custom_cmd_arg,
+                    .span = .{ arg_start, arg_end },
+                    .margin = .{ left_margin, right_margin },
+                    .custom_command_id_arg = .{ cmd_id, i },
+                });
+            },
         }
 
         if (!is_last) {
@@ -372,6 +332,4 @@ fn generic_parse_command_args(
             left_margin = whitesp_pre_next;
         }
     }
-
-    return n;
 }

@@ -6,7 +6,7 @@ const Parser = @import("input/Parser.zig");
 const Rule = @import("element/Rule.zig");
 const l0_rules = @import("input/l0_rules.zig");
 const l1_rules = @import("input/l1_rules.zig");
-const html_rules = @import("output/html_rules.zig");
+const gen_rules = @import("output/gen_rules.zig");
 const Generator = @import("output/Generator.zig");
 const ErrorReporter = @import("ErrorReporter.zig");
 const crash = ErrorReporter.crash;
@@ -14,6 +14,7 @@ const file_report = ErrorReporter.file_report;
 const throw = ErrorReporter.throw;
 const webserver = @import("webserver.zig");
 const Attributor = @import("internal/Attributor.zig");
+const CCEngine = @import("internal/CCEngine.zig");
 
 // these errors get thrown through the reporting system of `ErrorReporter`
 
@@ -62,7 +63,7 @@ pub const argdef = .{
         .desc = "Runs in web server mode (on 127.0.0.1:8080)",
     },
     argx.Arg(bool){
-        .fieldname = "cleantmp",
+        .fieldname = "cleantmp", // TODO FIX NOT WORKING
         .default = false,
         .desc = "Cleans the temp-folder for file caching at start (/tmp/ct2html/)",
     },
@@ -185,9 +186,6 @@ pub fn run(
     var error_reporter = ErrorReporter.init(alloc, io, htmlerror, responsemode);
     defer error_reporter.deinit();
 
-    var attributor = Attributor.init(alloc);
-    defer attributor.deinit();
-
     // this allocates the preprocessed text []const u8
     const preprocessed_text: []const u8 = Preprocessor.preprocess(
         alloc,
@@ -204,7 +202,13 @@ pub fn run(
     };
     defer alloc.free(preprocessed_text);
 
-    if (debug) std.debug.print("Preprocessed text: {s}\n", .{preprocessed_text});
+    if (debug) std.log.debug("[[PREPROCESSOR DEBUG]]:\n{s}\n", .{preprocessed_text});
+
+    var custom_cmd_engine = CCEngine.init(alloc, &error_reporter, preprocessed_text);
+    defer custom_cmd_engine.deinit();
+
+    var attributor = Attributor.init(alloc, &custom_cmd_engine);
+    defer attributor.deinit();
 
     // this allocates the l0nodes and l1nodes dynbufs only, which get removed
     // when deiniting
@@ -213,6 +217,7 @@ pub fn run(
         io,
         &error_reporter,
         &attributor,
+        &custom_cmd_engine,
         preprocessed_text,
         htmlerror,
     );
@@ -226,7 +231,21 @@ pub fn run(
         crash(error.ThrowWithoutReport);
     };
 
-    if (debug) parser.debug_print();
+    if (debug) {
+        std.log.debug("[[PARSER DEBUG]]:", .{});
+        parser.debug_print();
+        std.log.debug("[[PARSER CUSTOM COMMANDS]]:", .{});
+
+        const debugstr = parser.custom_cmd_engine.alloc_debug_cmd_list(true);
+        std.log.debug("{s}", .{debugstr});
+        alloc.free(debugstr);
+
+        const debugstr2 = parser.custom_cmd_engine.alloc_debug_cmd_list(false);
+        std.log.debug("{s}", .{debugstr2});
+        alloc.free(debugstr2);
+
+        std.log.debug("[[PARSER DEBUG END]]", .{});
+    }
 
     // is not defered since only the buffer from the generated HTML file is alloc'd
     var generator = Generator.init(
@@ -234,6 +253,7 @@ pub fn run(
         io,
         &error_reporter,
         &attributor,
+        &custom_cmd_engine,
         preprocessed_text,
         parser.l0nodes,
         parser.l1nodes,

@@ -6,12 +6,14 @@ const Rule = @import("../element/Rule.zig");
 const l0_rules = @import("l0_rules.zig");
 const l1_rules = @import("l1_rules.zig");
 const Attributor = @import("../internal/Attributor.zig");
+const CCEngine = @import("../internal/CCEngine.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 
 // TODO errors should be way more detailed than this
 pub const ParsingError = error{
     L0SyntaxError,
     L1SyntaxError,
+    CustomCommandDefSyntaxError,
     CommandSyntaxError,
     EOF,
     OutOfBounds,
@@ -20,6 +22,7 @@ pub const ParsingError = error{
 io: std.Io, // for error logging only
 e: *ErrorReporter,
 attributor: *Attributor,
+custom_cmd_engine: *CCEngine,
 text: []const u8,
 // TODO maybe stream based?
 cursor: usize,
@@ -34,6 +37,7 @@ pub fn init(
     io: std.Io,
     e: *ErrorReporter,
     attributor: *Attributor,
+    custom_cmd_engine: *CCEngine,
     text: []const u8,
     htmlerror: bool,
 ) @This() {
@@ -45,6 +49,7 @@ pub fn init(
         .l1nodes = .init(alloc, 4096),
         .e = e,
         .attributor = attributor,
+        .custom_cmd_engine = custom_cmd_engine,
         .htmlerror = htmlerror,
     };
 }
@@ -170,21 +175,21 @@ pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
 }
 
 pub fn debug_print(self: @This()) void {
-    std.debug.print("Nodes (L0):\n", .{});
+    std.log.debug("Nodes (L0):", .{});
     for (self.l0nodes.slice_view(), 0..) |node, idx| {
         var text: []const u8 = "";
         if (node.span) |s| text = self.text[s[0]..s[1]];
-        std.debug.print(
-            "{d}: {any} (children:{any}..{any})), (contains l1?{any}))\n   ({any})\n   [{s}]\n\n",
+        std.log.debug(
+            "{d}: {any} (children:{any}..{any})), (contains l1?{any}))\n   ({any})\n   [{s}]\n",
             .{ idx, node.kind, node.l1child0, node.l1childhead, node.contains_l1, node.span, text },
         );
     }
 
-    std.debug.print("Nodes (L1):\n", .{});
+    std.log.debug("Nodes (L1):", .{});
     for (self.l1nodes.slice_view(), 0..) |node, idx| {
         const text: []const u8 = self.text[node.span[0]..node.span[1]];
-        std.debug.print(
-            "{d}: {any} (margin:{any})\n   ({any})\n   [{s}]\n\n",
+        std.log.debug(
+            "{d}: {any} (margin:{any})\n   ({any})\n   [{s}]\n",
             .{ idx, node.kind, node.margin, node.span, text },
         );
     }

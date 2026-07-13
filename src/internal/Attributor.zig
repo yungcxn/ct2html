@@ -2,16 +2,22 @@ const std = @import("std");
 const Node = @import("../element/Node.zig");
 const DynBuf = @import("../ds/dynbuf.zig").DynBuf;
 const Rule = @import("../element/Rule.zig");
+const CCEngine = @import("CCEngine.zig");
+const Parser = @import("../input/Parser.zig");
+const crash = @import("../ErrorReporter.zig").crash;
 
 attributes: DynBuf(Node.L0),
 cursor: usize = 0, // for iterating
+custom_cmd_engine: *CCEngine, // for command engine to run commands and get their output
 
 pub fn init(
     alloc: std.mem.Allocator,
+    custom_cmd_engine: *CCEngine,
 ) @This() {
     return .{
         .attributes = .init(alloc, 20),
         .cursor = 0,
+        .custom_cmd_engine = custom_cmd_engine,
     };
 }
 
@@ -19,8 +25,12 @@ pub fn deinit(self: *@This()) void {
     self.attributes.deinit();
 }
 
-pub inline fn push(self: *@This(), node: Node.L0) void {
-    self.attributes.push(node);
+pub inline fn push(self: *@This(), node: Node.L0) Parser.ParsingError!void {
+    if (node.kind == .blkdef or node.kind == .inldef) {
+        try self.custom_cmd_engine.new_cmd_def_from_attr(node);
+    } else {
+        self.attributes.push(node);
+    }
 }
 
 pub inline fn peek(self: *@This()) ?Node.L0 {

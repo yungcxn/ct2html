@@ -1,8 +1,12 @@
 !style:value
 !title:mytitle
+!blkdef:red,<p style="color: red;">,</p>
+!inldef:green,<span style="color: green;">,</span>
 @import(0_correct/base_attr.ct)
 
 # My title
+
+@red: This is a red block of text, with some @green(this is green)-text.
 
 Here is some *bold-containing* text, and some **italic-containing** txt.
 ***both***,
