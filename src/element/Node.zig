@@ -49,8 +49,6 @@ pub const L0Kind = enum(u8) {
     arabic_paragraph,
 
     // bare footnotes are not planned due to them being at the page end -- not user-friendly in web
-    detail, // TODO - ausklappbar
-    footnote_block, // TODO - block
     sidenote, // TODO - sidenote - beautiful
 
     // all code_block_* nodes get omitted besides _caption, which is not always present.
@@ -85,9 +83,17 @@ pub const L0Kind = enum(u8) {
 
     blk_cmd_header_text,
     blk_cmd_footer_text,
+
     blk_cmd_ar_text,
+
     blk_cmd_style_link,
+
     blk_cmd_script_link,
+
+    blk_cmd_details_0summary, // @details(<summary>, <text>)
+    blk_cmd_details_1text,
+    blk_cmd_info_0summary, // @info(<summary>, <text>)
+    blk_cmd_info_1text,
 
     blk_custom_cmd_arg, // uses `L0.custom_command_id_arg`
 
@@ -119,15 +125,18 @@ pub const L1Kind = enum(u8) {
 
     abbreviation, // TODO! with custom trigger letter
 
+    // since we need to encode the count of all sidenotes before this, and this cound gets embedded
+    //   into the tag more than once, simple <pre>...<post> syntax is not feasible. Because of this,
+    //   the `Parser` does not need to generate a sidenote-count node, but instead the `Generator`
+    //   needs to generate the count in a complex pre-func.
+    sidenote,
+
     // - inline command section: @command(...)
     // - no overloading!
     // - we do not push command node wrappers around args since they cost for nothing
     // - note: the `inl_cmd_` prefix is important since the `CommandEngine` parses commands out of them
     inl_cmd_link_0url,
     inl_cmd_link_1displayname,
-
-    inl_cmd_fs_0size, // font-size
-    inl_cmd_fs_1text,
 
     inl_cmd_color_0color,
     inl_cmd_color_1text,
@@ -139,6 +148,10 @@ pub const L1Kind = enum(u8) {
     inl_cmd_span_1text,
 
     inl_cmd_ar_text,
+
+    inl_cmd_fs_0size, // font-size
+    inl_cmd_fs_1text,
+
     inl_cmd_raw_text,
 
     inl_custom_cmd_arg, // uses `L1.custom_command_id_arg`

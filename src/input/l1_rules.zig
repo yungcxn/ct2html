@@ -12,21 +12,26 @@ const crash = @import("../ErrorReporter.zig").crash;
 
 pub const datatable = hack.StructByteMap(.{
     .{ .{'@'}, Rule.L1Def.def(&allcmd_rules.l1_parse_inline_command) },
+    .{ .{'['}, Rule.L1Def.def(&sidenote) }, // for [[...]], and fallback to par on [] or escaped seq
     .{ .{'`'}, Rule.L1Def.def(&inline_code) },
     .{ .{'*'}, Rule.L1Def.def(&bold_and_sons) },
     .{ .{'_'}, Rule.L1Def.def(&strikethrough_and_sons) },
 }).init();
 
-pub fn inline_code(p: *Parser, endat: usize) Parser.ParsingError!usize {
-    return generic_capture(p, endat, .{.inline_code});
+fn sidenote(p: *Parser, endat: usize) Parser.ParsingError!usize {
+    return generic_capture(p, endat, .{.sidenote}, 2);
 }
 
-pub fn bold_and_sons(p: *Parser, endat: usize) Parser.ParsingError!usize {
-    return generic_capture(p, endat, .{ .bold, .italic, .bold_italic });
+fn inline_code(p: *Parser, endat: usize) Parser.ParsingError!usize {
+    return generic_capture(p, endat, .{.inline_code}, 1);
 }
 
-pub fn strikethrough_and_sons(p: *Parser, endat: usize) Parser.ParsingError!usize {
-    return generic_capture(p, endat, .{ .strikethrough, .strikethrough_bold, .strikethrough_italic, .strikethrough_bold_italic });
+fn bold_and_sons(p: *Parser, endat: usize) Parser.ParsingError!usize {
+    return generic_capture(p, endat, .{ .bold, .italic, .bold_italic }, 1);
+}
+
+fn strikethrough_and_sons(p: *Parser, endat: usize) Parser.ParsingError!usize {
+    return generic_capture(p, endat, .{ .strikethrough, .strikethrough_bold, .strikethrough_italic, .strikethrough_bold_italic }, 1);
 }
 
 // this is a common parser rule where we capture a substring withing a trigger
@@ -36,31 +41,44 @@ inline fn generic_capture(
     p: *Parser,
     endat: usize,
     node_levels: anytype,
+    level0_for: usize, // how many captures for the first node level
 ) Parser.ParsingError!usize {
-    p.dec(); // to get cursor back to the first char on trigger
-    // we assume that the char we're on is the trigger:
-    const trigger = .{p.text[p.cursor]};
+    // to get cursor back to the first char on trigger
+    p.dec();
 
-    const capturec = p.bounded_skipc(&trigger, endat) catch {
+    // we assume that the char we're on is the trigger:
+    const opening_trigger = .{p.text[p.cursor]};
+    const closing_trigger = switch (opening_trigger[0]) {
+        '(' => .{')'},
+        '[' => .{']'},
+        '{' => .{'}'},
+        '<' => .{'>'},
+        else => opening_trigger,
+    };
+
+    const capturec = p.bounded_skipc(&opening_trigger, endat) catch {
         return p.e.file_report(error.L1SyntaxError, true, "Pre-capture not found", null);
     };
     const text_start = p.cursor;
 
     var level: ?Node.L1Kind = null;
-    inline for (node_levels, 1..) |lk, idx| {
+    inline for (node_levels, level0_for..) |lk, idx| {
         if (capturec == idx) {
             level = lk;
         }
     }
+
     if (level == null) {
-        return p.e.file_report(error.L1SyntaxError, true, "No node kind for capture count", null);
+        // we have a start capture level, that is not to be searched for the given levels,
+        //   which means, that the text is not to be captured. it still lives in parent text
+        return 0;
     }
 
     // cursor is at first letter after capture, much like in `capture_for`
     var chars_in_capture: usize = 0;
     while (true) {
-        chars_in_capture += p.bounded_findc(&trigger, endat) catch {
-            return p.e.file_report(error.L1SyntaxError, true, "Post-capture not found", level);
+        chars_in_capture += p.bounded_findc(&closing_trigger, endat) catch {
+            return p.e.file_report(error.L1SyntaxError, true, "Post-capture not found from text", level);
         };
         // cursor is on trigger, and `chars_in_capture` includes '\\'
         if (p.text[p.cursor - 1] == '\\') {
@@ -74,8 +92,8 @@ inline fn generic_capture(
     }
 
     // cursor is on the first of the capture, repeat
-    const capturec2 = p.bounded_skipc(&trigger, endat) catch {
-        return p.e.file_report(error.L1SyntaxError, true, "Post-capture not found", level);
+    const capturec2 = p.bounded_skipc(&closing_trigger, endat) catch {
+        return p.e.file_report(error.L1SyntaxError, true, "Post-capture not found from first closing-capture character", level);
     };
 
     // e.g. ***txt-in-capture*** => capturec = 3, capturec2 = 3, must be same

@@ -30,6 +30,10 @@ l1nodes: DynBuf(Node.L1),
 
 outbuf: DynBuf(u8),
 
+// generation specific variables
+sidenote_count: usize = 0,
+
+// user options from `main`
 htmlerror: bool = false, // if true, we print the error as HTML instead of plain text
 responsemode: bool = false, // if true, we print the response header for HTML
 

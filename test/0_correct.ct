@@ -1,4 +1,4 @@
-!style:value
+!style:sidenote.css
 !title:mytitle
 !blkdef:red,<p style="color: red;">,</p>
 !inldef:green,<span style="color: green;">,</span>
@@ -27,6 +27,14 @@ How about some _strikethrough_ text, and some __strikethrough-bold__ text?
 and some ___strikethrough-italic___ text, and some ____strikethough-bold-italic____ text?
 
 > cool quote
+
+Lorem Ipsum dolor sit amet, Lorem Ipsum dolor sit amet, Lorem Ipsum dolor sit amet,
+Lorem Ipsum dolor sit amet, Lorem Ipsum dolor sit[[sidenote text]] amet, Lorem Ipsum dolor sit amet,
+Lorem Ipsum dolor sit amet, Lorem Ipsum dolor sit amet, Lorem Ipsum dolor sit amet,
+
+@details: Summary text, body text testadasdasdasdasd
+
+@info: Info Summary, my info text, and some more info text, and more
 
 and some text
 

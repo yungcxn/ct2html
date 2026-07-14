@@ -158,6 +158,22 @@ pub const datatable = hack.StructByteMap(.{
         Rule.GenDef.def("<footer>", "</footer>", .all_esc),
     },
     .{
+        .{Node.L0Kind.blk_cmd_details_0summary},
+        Rule.GenDef.def("<details><summary>", "</summary>", .all_esc),
+    },
+    .{
+        .{Node.L0Kind.blk_cmd_details_1text},
+        Rule.GenDef.def("", "</details>", .all_esc),
+    },
+    .{
+        .{Node.L0Kind.blk_cmd_info_0summary},
+        Rule.GenDef.def("<aside class=\"info\" data-title=\"", "\">", .all_esc),
+    },
+    .{
+        .{Node.L0Kind.blk_cmd_info_1text},
+        Rule.GenDef.def("", "</aside>", .all_esc),
+    },
+    .{
         .{Node.L0Kind.blk_custom_cmd_arg},
         Rule.GenDef.def(&cc_rules.custom_pre, &cc_rules.custom_post, .all_esc),
     },
@@ -196,6 +212,10 @@ pub const datatable = hack.StructByteMap(.{
     .{
         .{Node.L1Kind.strikethrough_bold_italic},
         Rule.GenDef.def("<del><strong><em>", "</em></strong></del>", .all_esc),
+    },
+    .{
+        .{Node.L1Kind.sidenote},
+        Rule.GenDef.def(&pre_sidenote, "<span style=\"font-size: 0;\">)</span></span>", .all_esc),
     },
     .{
         .{Node.L1Kind.inl_cmd_raw_text},
@@ -276,6 +296,29 @@ fn head_sec(g: *Generator, _: *anyopaque) Generator.GenError!?@Vector(2, usize) 
     g.attributor.reset_cursor();
     g.print_direct("</head>\n<body>"); // opening was already printed.
     return null; // nothing to inspect in here
+}
+
+fn pre_sidenote(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, usize) {
+    const realnode: *Node.L0 = @ptrCast(@alignCast(node));
+    const span = realnode.span;
+
+    g.sidenote_count += 1;
+    var int_to_str_buf: [32]u8 = undefined;
+
+    const sidenote_count_str = std.fmt.bufPrint(
+        &int_to_str_buf,
+        "{}",
+        .{g.sidenote_count},
+    ) catch crash(error.OOM);
+
+    g.print_direct("<label for=\"sn-");
+    g.print_direct(sidenote_count_str);
+    g.print_direct("\" class=\"margin-toggle sidenote-number\">");
+    g.print_direct("</label><input type=\"checkbox\" id=\"sn-");
+    g.print_direct(sidenote_count_str);
+    g.print_direct("\" class=\"margin-toggle\"><span class=\"sidenote\"><span style=\"font-size: 0;\"> (</span>");
+
+    return span;
 }
 
 fn generic_pre_anchored_heading(
