@@ -314,19 +314,23 @@ fn generic_parse_cmd_args(
             .l0 => p.l0nodes.push(Node.L0{
                 .kind = generic_cmd_data[i],
                 .span = .{ arg_start, arg_end },
-                .contains_l1 = true,
+                .l1_containable = true,
             }),
-            .l1 => p.l1nodes.push(Node.L1{
-                .kind = generic_cmd_data[i],
-                .span = .{ arg_start, arg_end },
-                .margin = .{ left_margin, right_margin },
-            }),
+            .l1 => {
+                // we have a special l1 command: raw, which is not l1-containable
+                p.l1nodes.push(Node.L1{
+                    .kind = generic_cmd_data[i],
+                    .span = .{ arg_start, arg_end },
+                    .margin = .{ left_margin, right_margin },
+                    .l1_containable = generic_cmd_data[i] != Node.L1Kind.inl_cmd_raw_text,
+                });
+            },
             .custom_l0 => {
                 const cmd_id = generic_cmd_data;
                 p.l0nodes.push(Node.L0{
                     .kind = .blk_custom_cmd_arg,
                     .span = .{ arg_start, arg_end },
-                    .contains_l1 = true,
+                    .l1_containable = true,
                     .custom_command_id_arg = .{ cmd_id, i },
                 });
             },
@@ -336,6 +340,7 @@ fn generic_parse_cmd_args(
                     .kind = .inl_custom_cmd_arg,
                     .span = .{ arg_start, arg_end },
                     .margin = .{ left_margin, right_margin },
+                    .l1_containable = true,
                     .custom_command_id_arg = .{ cmd_id, i },
                 });
             },

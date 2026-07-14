@@ -24,9 +24,15 @@ e: *ErrorReporter,
 attributor: *Attributor,
 custom_cmd_engine: *CCEngine,
 text: []const u8,
-// TODO maybe stream based?
 cursor: usize,
 
+// what is an AST in other languages is here constructed out of these two node buffers:
+//   1.: l0 nodes, which are parsed from the preprocessed text into l0-block-nodes, where each node
+//       is the fundamental text block, where other modifiers can be applied to
+//   2.: l1 nodes: which are detected in l0 nodes, or even in other l1 nodes.
+//
+// the children (always l1) for nodes (l0 or l1) are stored LINEARLY in the l1nodes buffer, which
+// means, that each level in the AST is consecutively stored. Therefore we parse level by level
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
@@ -102,7 +108,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
         l0_rules.datatable.lookup(0).?;
 
     if (l0_ri.pre_node) |kind| self.l0nodes.push(
-        .{ .kind = kind, .span = null, .contains_l1 = false },
+        .{ .kind = kind, .span = null, .l1_containable = false },
     );
 
     const l0_apply_state = try l0_ri.parse(self, blockend);
@@ -119,7 +125,7 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
             }
         },
         .success => if (l0_ri.post_node) |kind| {
-            self.l0nodes.push(.{ .kind = kind, .span = null, .contains_l1 = false });
+            self.l0nodes.push(.{ .kind = kind, .span = null, .l1_containable = false });
         },
     }
 
@@ -128,11 +134,11 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
 
 // assume cursor is at the start of the block, and blockend is the end of the block
 // but cursor must be preserved after each func since it may move if the rule needs the cursor to
-fn parse_all_l1s(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void {
+fn parse_base_l1_from_l0(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void {
     // assume span exists
     self.cursor = l0node.span.?[0];
     const node_end = l0node.span.?[1];
-    // we run through the text span of the l0 node TODO
+
     while (self.bounded_pop(node_end)) |c| {
         if (c == '\\') {
             _ = self.bounded_pop(node_end); // skip escaped char
@@ -153,24 +159,59 @@ fn parse_all_l1s(self: *@This(), l0node: *Node.L0) Parser.ParsingError!void {
     }
 }
 
+fn parse_l1_from_l1(self: *@This(), l1node: *Node.L1) Parser.ParsingError!void {
+    // assume span exists
+    self.cursor = l1node.span[0];
+    const node_end = l1node.span[1];
+
+    while (self.bounded_pop(node_end)) |c| {
+        if (c == '\\') {
+            _ = self.bounded_pop(node_end); // skip escaped char
+            continue;
+        }
+
+        const l1_ri = l1_rules.datatable.lookup(c) orelse continue;
+        const l1nodes_pushedc = try l1_ri.parse_node(self, node_end);
+
+        if (l1nodes_pushedc != 0) {
+            if (l1node.l1child0 == null) {
+                l1node.l1child0 = self.l1nodes.head - l1nodes_pushedc;
+                l1node.l1childhead = l1node.l1child0.? + l1nodes_pushedc;
+            } else {
+                l1node.l1childhead = l1node.l1childhead.? + l1nodes_pushedc;
+            }
+        }
+    }
+}
+
 pub fn build_nodes(self: *@This()) Parser.ParsingError!void {
-    self.l0nodes.push(.{ .kind = .begin, .span = null, .contains_l1 = false });
+    self.l0nodes.push(.{ .kind = .begin, .span = null, .l1_containable = false });
 
     // l0 phase
     while (self.align_for_block()) |blockend| {
-        const preserve_cursor = try self.parse_l0nodes_from_block(blockend); // testmode err propagation
+        const preserve_cursor = try self.parse_l0nodes_from_block(blockend); // err propagation
         if (!preserve_cursor) {
             self.cursor = blockend;
         }
     }
 
-    self.l0nodes.push(.{ .kind = .end, .span = null, .contains_l1 = false });
+    self.l0nodes.push(.{ .kind = .end, .span = null, .l1_containable = false });
 
-    // l1 phase, reiterate over created l0 nodes
+    // base l1 phase, reiterate over created l0 nodes
     for (self.l0nodes.slice_view()) |*node| {
-        if (node.contains_l1 and node.span != null) {
-            try self.parse_all_l1s(node); // err progapation here aswell
+        if (node.l1_containable and node.span != null) {
+            try self.parse_base_l1_from_l0(node); // err progapation here aswell
         }
+    }
+
+    var ast_highest_l1_level: @Vector(2, usize) = .{ 0, self.l1nodes.head };
+    while (ast_highest_l1_level[0] != ast_highest_l1_level[1]) {
+        for (self.l1nodes.slice_view()[ast_highest_l1_level[0]..ast_highest_l1_level[1]]) |*l1node| {
+            if (l1node.l1_containable) {
+                try self.parse_l1_from_l1(l1node); // err progapation here aswell
+            }
+        }
+        ast_highest_l1_level = .{ ast_highest_l1_level[1], self.l1nodes.head };
     }
 }
 
@@ -181,7 +222,7 @@ pub fn debug_print(self: @This()) void {
         if (node.span) |s| text = self.text[s[0]..s[1]];
         std.log.debug(
             "{d}: {any} (children:{any}..{any})), (contains l1?{any}))\n   ({any})\n   [{s}]\n",
-            .{ idx, node.kind, node.l1child0, node.l1childhead, node.contains_l1, node.span, text },
+            .{ idx, node.kind, node.l1child0, node.l1childhead, node.l1_containable, node.span, text },
         );
     }
 

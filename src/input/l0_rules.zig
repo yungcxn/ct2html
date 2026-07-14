@@ -80,7 +80,7 @@ fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFina
                 try p.attributor.push(.{
                     .kind = attr_kind,
                     .span = .{ value_start, endat },
-                    .contains_l1 = false,
+                    .l1_containable = false,
                 });
                 break :line;
             } else {
@@ -92,7 +92,7 @@ fn attributes(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFina
         try p.attributor.push(.{
             .kind = attr_kind,
             .span = .{ value_start, p.cursor },
-            .contains_l1 = false,
+            .l1_containable = false,
         });
 
         p.inc(); // cursor is now on the first char of the next line, which could be '!' for next
@@ -133,7 +133,7 @@ fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalSt
         return p.e.file_report(L0SyntaxError, true, "Newline in heading", kind);
     }
 
-    p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat }, .contains_l1 = false });
+    p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat }, .l1_containable = false });
     return .success;
 }
 
@@ -207,7 +207,7 @@ fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFina
                 p.l0nodes.push(.{
                     .kind = .code_block_header,
                     .span = .{ header_start, p.cursor - 1 },
-                    .contains_l1 = true,
+                    .l1_containable = true,
                 });
             }
             p.inc();
@@ -224,13 +224,13 @@ fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFina
     p.l0nodes.push(.{
         .kind = .code_block_meta,
         .span = code_block_meta_span,
-        .contains_l1 = false,
+        .l1_containable = false,
     });
 
     p.l0nodes.push(.{
         .kind = .code_block,
         .span = code_block_span,
-        .contains_l1 = false,
+        .l1_containable = false,
     });
 
     return .success;
@@ -397,7 +397,7 @@ pub fn par(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalSt
 }
 
 fn nonpar(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalState {
-    p.l0nodes.push(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat }, .contains_l1 = true });
+    p.l0nodes.push(.{ .kind = .nonparagraph, .span = .{ p.cursor + 1, endat }, .l1_containable = true });
 
     return .success;
 }

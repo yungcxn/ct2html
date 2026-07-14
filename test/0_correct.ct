@@ -6,7 +6,9 @@
 !inldef:testcmd,escaped\,text    ,   and-none-\\escaped-text
 @import(0_correct/base_attr.ct)
 
-# My title
+# My title 
+
+This is a l1-in-l1-test: @green(This is a green block of text, with some *bold* in it.)
 
 @red: This is a red block of text, with some @green(this is green)-text.
 

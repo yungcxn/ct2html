@@ -1,6 +1,7 @@
 const std = @import("std");
 const hack = @import("../hack.zig");
 
+// TODO: unify L0 and L1
 pub const L0 = struct {
     kind: L0Kind,
     span: ?@Vector(2, usize) = null,
@@ -8,7 +9,7 @@ pub const L0 = struct {
     l1child0: ?usize = null,
     l1childhead: ?usize = null,
 
-    contains_l1: bool = true,
+    l1_containable: bool = true,
 
     // custom command nodes do not have enum kinds and need the identification
     //   to be done through this field, whereas something like
@@ -23,10 +24,10 @@ pub const L1 = struct {
 
     // i like naming them different than the l0 vars for clarity improvement
     //   but logically their the same
-    l1_in_l1child0: ?usize = null,
-    l1_in_l1childhead: ?usize = null,
+    l1child0: ?usize = null,
+    l1childhead: ?usize = null,
 
-    l1_in_l1: bool = true,
+    l1_containable: bool = true,
 
     // see above
     custom_command_id_arg: ?@Vector(2, usize) = null,
@@ -49,7 +50,7 @@ pub const L0Kind = enum(u8) {
     arabic_paragraph,
 
     // bare footnotes are not planned due to them being at the page end -- not user-friendly in web
-    sidenote, // TODO - sidenote - beautiful
+    sidenote,
 
     // all code_block_* nodes get omitted besides _caption, which is not always present.
     code_block_header,
@@ -76,7 +77,7 @@ pub const L0Kind = enum(u8) {
     num_paren_item_label,
     num_paren_item_text,
 
-    // blockcommand section: @commandname: // TODO!: for all special nodes, safety measures by type
+    // blockcommand section: @commandname: arg0, arg1, ...
     blk_cmd_img_0src,
     blk_cmd_img_1size,
     blk_cmd_img_2caption,
