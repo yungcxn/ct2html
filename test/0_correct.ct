@@ -1,5 +1,5 @@
-!style:sidenote.css
 !title:mytitle
+!style:style.css
 !blkdef:red,<p style="color: red;">,</p>
 !inldef:green,<span style="color: green;">,</span>
 !blkdef:rainbow,<p style="color: red;">,</p>,<p style="color: green;">,</p>,<p style="color: blue;">,</p>

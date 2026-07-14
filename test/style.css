@@ -1,0 +1,138 @@
+/* ----- Fonts ----- */
+@import url('https://fonts.googleapis.com/css2?family=Latin+Modern+Roman:wght@400;700&display=swap');
+@import url('https://fonts.cdnfonts.com/css/latin-modern-sans');
+@import url('https://fonts.googleapis.com/css2?family=Latin+Modern+Math&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+/* Nerd‑style monospace: Ubuntu Mono */
+@import url('https://fonts.googleapis.com/css2?family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
+:root {
+  --content-width: 40em;
+  --sidenote-width: 16em;
+  --gap: 3em;
+  --text-color: #222;
+  --note-color: #666;
+  --marker-color: #b34700;
+}
+
+* { box-sizing: border-box; }
+
+/* ============================
+    BASIC ARTICLE PAGE — just enough
+    to test sidenotes in a realistic
+    centered layout. Not a design system.
+    ============================ */
+
+body {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--text-color);
+  background: #fdfdfb;
+  margin: 0;
+  padding: 3em 1.5em 6em;
+}
+
+article {
+  max-width: calc(var(--content-width) + var(--gap) + var(--sidenote-width));
+  margin: 0 auto;
+}
+
+header { max-width: var(--content-width); margin-bottom: 2em; }
+
+time {
+  display: block;
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 0.8em;
+  color: var(--note-color);
+  margin-top: 0.3em;
+}
+
+h1 { max-width: var(--content-width); font-size: 1.8em; line-height: 1.2; margin: 0 0 0.2em; }
+h2 { max-width: var(--content-width); font-size: 1.3em; margin: 1.8em 0 0.6em; }
+p  { max-width: var(--content-width); margin: 1.4em 0; }
+code {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.85em;
+  background: #f0eee6;
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+/* ============================
+    SIDENOTES — class names match
+    Tufte CSS's own convention:
+    margin-toggle / sidenote-number / sidenote
+    ============================ */
+
+/* THE FIX: hide the checkbox robustly, not just display:none,
+    so no ambient/reset stylesheet can accidentally override it
+    and no autofill/appearance styling can leak through. */
+input.margin-toggle {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sidenote-number {
+  counter-increment: sidenote-counter;
+  color: var(--marker-color);
+  cursor: pointer;
+}
+
+.sidenote-number::after {
+  content: counter(sidenote-counter);
+  font-size: 0.7em;
+  vertical-align: super;
+  font-weight: bold;
+  margin: 0 0.1em;
+}
+
+.sidenote {
+  float: right;
+  clear: right;
+  margin-right: calc(-1 * (var(--sidenote-width) + var(--gap)));
+  width: var(--sidenote-width);
+  font-size: 0.85em;
+  line-height: 1.5;
+  color: var(--note-color);
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+.sidenote::before {
+  content: counter(sidenote-counter) " ";
+  color: var(--marker-color);
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+/* ============================
+    MOBILE: no room for margins —
+    note collapses inline, indented,
+    under its paragraph when toggled
+    ============================ */
+@media (max-width: 1000px) {
+  article { max-width: var(--content-width); }
+
+  .sidenote {
+    display: none;
+    float: none;
+    clear: both;
+    width: auto;
+    margin: 0.6em 0 0.6em 1.4em;
+    padding-left: 0.8em;
+    border-left: 2px solid var(--marker-color);
+  }
+
+  input.margin-toggle:checked + .sidenote {
+    display: block;
+  }
+
+  .sidenote-number {
+    text-decoration: underline dotted;
+  }
+}
