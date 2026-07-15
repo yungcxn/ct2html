@@ -146,6 +146,14 @@ pub const datatable = hack.StructByteMap(.{
         Rule.GenDef.def("<link rel=\"stylesheet\" href=\"", "\">", .direct),
     },
     .{
+        .{Node.L0Kind.blk_cmd_stylecode_code},
+        Rule.GenDef.def("<style>", "</style>", .direct),
+    },
+    .{
+        .{Node.L0Kind.blk_cmd_scriptcode_code},
+        Rule.GenDef.def("<script>", "</script>", .direct),
+    },
+    .{
         .{Node.L0Kind.blk_cmd_ar_text},
         Rule.GenDef.def("<p dir=\"rtl\" lang=\"ar\">", "</p>", .direct),
     },
@@ -284,6 +292,16 @@ fn head_sec(g: *Generator, _: *anyopaque) Generator.GenError!?@Vector(2, usize) 
                 g.print_direct("<script src=\"");
                 g.print_direct(g.textin[l0node.span.?[0]..l0node.span.?[1]]);
                 g.print_direct("\"></script>");
+            },
+            .stylecode => {
+                g.print_direct("<style>");
+                g.print_direct(g.textin[l0node.span.?[0]..l0node.span.?[1]]);
+                g.print_direct("</style>");
+            },
+            .scriptcode => {
+                g.print_direct("<script>");
+                g.print_direct(g.textin[l0node.span.?[0]..l0node.span.?[1]]);
+                g.print_direct("</script>");
             },
             .title => {
                 g.print_direct("<title>");

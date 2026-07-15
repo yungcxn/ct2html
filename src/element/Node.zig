@@ -91,6 +91,10 @@ pub const L0Kind = enum(u8) {
 
     blk_cmd_script_link,
 
+    blk_cmd_stylecode_code,
+
+    blk_cmd_scriptcode_code,
+
     blk_cmd_details_0summary, // @details(<summary>, <text>)
     blk_cmd_details_1text,
     blk_cmd_info_0summary, // @info(<summary>, <text>)
@@ -99,8 +103,10 @@ pub const L0Kind = enum(u8) {
     blk_custom_cmd_arg, // uses `L0.custom_command_id_arg`
 
     // attribute section
-    style, // in head tag, unlike above
-    script, // in head tag, unline above
+    style,
+    script,
+    stylecode,
+    scriptcode,
     title,
     heading_icon,
     blkdef, // this and his brother below get used by `CommandEngine`
