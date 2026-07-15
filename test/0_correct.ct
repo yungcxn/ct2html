@@ -16,6 +16,8 @@ This is a l1-in-l1-test: @green(This is a green block of text, with some *bold* 
 
 (@testcmd(xx)).
 
+@div(some-class, @div(some-other-class, @link(https://www.google.com, https://www.google.com)))
+
 Here is some *bold-containing* text, and some **italic-containing** txt.
 ***both***,
 and **multi-line-

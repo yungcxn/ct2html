@@ -97,7 +97,15 @@ pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule
 
     const blkcmd_name_end = p.cursor;
 
-    // cursor is on ':', so we check if the blockcommand name is free of whitespace
+    // cursor is on ':', but could be an arg in some inline command, so we abort if there's a ( in it
+    if (!p.bounds_freeof(blkcmd_name_start, blkcmd_name_end, '(')) {
+        p.cursor = start;
+        _ = par(p, endat) catch |err| return err;
+        return .transitioned;
+    }
+
+    // it is quiet sure that this is now a blockcommand,
+    //   so we check if the blockcommand name is free of whitespace
     if (!p.bounds_freeof_whitesp(blkcmd_name_start, blkcmd_name_end)) {
         return p.e.file_report(L0SyntaxError, true, "Space between blockcommand name and colon", null);
     }
@@ -181,21 +189,39 @@ pub fn l1_parse_inline_command(p: *Parser, endat: usize) Parser.ParsingError!usi
 
     const argarea0_at = p.cursor;
 
-    var argareac: usize = 0;
+    var depth: usize = 0;
     while (true) {
-        argareac += p.bounded_findc(')', endat) catch {
+        if (p.cursor >= endat) {
             return p.e.file_report(error.L1SyntaxError, true, "Missing command argument", null);
-        };
-        // cursor is on trigger, and `argareac` includes '\\'
-        if (p.text[p.cursor - 1] == '\\') {
-            // escaped trigger, so we skip it and continue searching
-            argareac += 1;
+        }
+        const c = p.text[p.cursor];
+        if (c == '\\') {
+            // escaped char, skip it and whatever follows it
+            p.inc();
+            if (p.cursor >= endat) {
+                return p.e.file_report(error.L1SyntaxError, true, "Missing command argument", null);
+            }
             p.inc();
             continue;
-        } else {
-            break;
         }
+        if (c == '(') {
+            depth += 1;
+            p.inc();
+            continue;
+        }
+        if (c == ')') {
+            if (depth == 0) {
+                // this is the real closing paren for argarea0_at
+                break;
+            }
+            depth -= 1;
+            p.inc();
+            continue;
+        }
+        p.inc();
     }
+
+    const argareac = p.cursor - argarea0_at;
 
     if (argareac == 0) {
         return p.e.file_report(error.L1SyntaxError, true, "Missing command argument", null);
