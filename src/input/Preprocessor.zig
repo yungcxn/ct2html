@@ -6,11 +6,18 @@ const ByteStream = @import("../ds/ByteStream.zig");
 const ErrorReporter = @import("../ErrorReporter.zig");
 const crash = @import("../ErrorReporter.zig").crash;
 
-// @import(file) as long as there's no \ before @
-// if \, then command parsing skips it regardless, not adjustment needed
+const Cmd = enum { none, import, deferimport };
 
-// this returns an allocated dynbuf slice of the preprocessed text, nothing else
-// is to be allocated out of here
+const DeferredImport = struct {
+    file: std.Io.File,
+    path: []const u8,
+};
+
+const DeferQueue = struct {
+    items: Stack(DeferredImport),
+    next: usize = 0,
+};
+
 pub fn preprocess(
     alloc: std.mem.Allocator,
     io: std.Io,
@@ -18,8 +25,7 @@ pub fn preprocess(
     cwd: std.Io.Dir,
     file0: std.Io.File,
 ) FileWalkError![]const u8 {
-    var fbytes: []u8 = undefined; // gets always free'd in `walk_and_merge`
-    // `fbytes` is the `file0` buffer, which is freed in `walk_and_merge`
+    var fbytes: []u8 = undefined;
     if (file0.handle == std.Io.File.stdin().handle) {
         fbytes = filex.alloc_stdin_bytes(alloc, io, file0);
     } else {
@@ -31,10 +37,6 @@ pub fn preprocess(
 
     try walk_and_merge(alloc, io, e, &dynbuf, cwd, file0, fbytes);
 
-    // only `try` since we try to propagate the test error when in testmode
-
-    // we could postpone, but no need to keep all files twice in memory
-    // since the reader ops copy the file contents in `dynbuf`
     return dynbuf.to_owned_slice();
 }
 
@@ -50,22 +52,30 @@ fn walk_and_merge(
     e: *ErrorReporter,
     dynbuf: *DynBuf(u8),
     cwd: std.Io.Dir,
-    file0: std.Io.File, // borrowed, not closed
-    fbytes: []const u8, // borrowed, not free'd
+    file0: std.Io.File,
+    fbytes: []const u8,
 ) FileWalkError!void {
-    // null: file without reader, meaning `stdin`
     var sbuf_stack = Stack(ByteStream).init(alloc, 4);
     defer sbuf_stack.deinit();
-    sbuf_stack.push(.init(fbytes)); // not free'd
+    sbuf_stack.push(.init(fbytes));
 
-    // null: file without need to be cyclic checked or closed, meaning `stdin`
     var file_stack = Stack(std.Io.File).init(alloc, 4);
     defer file_stack.deinit();
-    file_stack.push(file0); // not closed
+    file_stack.push(file0);
+
+    var defer_stack = Stack(DeferQueue).init(alloc, 4);
+    defer defer_stack.deinit();
+    defer_stack.push(.{ .items = Stack(DeferredImport).init(alloc, 2) });
 
     var depth: usize = 1;
 
     errdefer {
+        while (defer_stack.pop()) |dq_val| {
+            var dq = dq_val;
+            const items = dq.items.slice_view() orelse &[_]DeferredImport{};
+            for (items[dq.next..]) |di| filex.close(io, di.file);
+            dq.items.deinit();
+        }
         while (depth > 1) : (depth -= 1) {
             if (file_stack.pop()) |file| filex.close(io, file);
             if (sbuf_stack.pop()) |sbuf| alloc.free(sbuf.buf);
@@ -78,12 +88,31 @@ fn walk_and_merge(
         const start_cursor = sbuf.cursor;
         const pre_at_span = sbuf.take_exc('@') orelse {
             dynbuf.append(sbuf.buf[start_cursor..sbuf.cursor]);
+
+            const dq = defer_stack.peek_addr().?;
+            const items = dq.items.slice_view() orelse &[_]DeferredImport{};
+            if (dq.next < items.len) {
+                const di = items[dq.next];
+                dq.next += 1;
+
+                const newfilebuf = filex.alloc_file_bytes(alloc, io, di.file);
+                sbuf_stack.push(.init(newfilebuf));
+                file_stack.push(di.file);
+                defer_stack.push(.{ .items = Stack(DeferredImport).init(alloc, 2) });
+                depth += 1;
+                continue;
+            }
+
             depth -= 1;
             if (sbuf_stack.pop()) |sb| {
                 if (depth >= 1) alloc.free(sb.buf);
             }
             if (file_stack.pop()) |file| {
                 if (depth >= 1) filex.close(io, file);
+            }
+            if (defer_stack.pop()) |finished| {
+                var fq = finished;
+                fq.items.deinit();
             }
             continue;
         };
@@ -95,13 +124,14 @@ fn walk_and_merge(
             continue;
         }
 
-        const is_import = blk: {
-            const cmd_span = sbuf.take_exc('(') orelse break :blk false;
-            break :blk std.mem.eql(u8, cmd_span, "import");
+        const cmd: Cmd = blk: {
+            const cmd_span = sbuf.take_exc('(') orelse break :blk .none;
+            if (std.mem.eql(u8, cmd_span, "import")) break :blk .import;
+            if (std.mem.eql(u8, cmd_span, "deferimport")) break :blk .deferimport;
+            break :blk .none;
         };
 
-        if (!is_import) { // same as above
-            // undo the command lookahead so we don't lose data after '@'
+        if (cmd == .none) {
             sbuf.cursor = post_at_cursor;
             dynbuf.append(pre_at_span);
             dynbuf.push('@');
@@ -127,8 +157,6 @@ fn walk_and_merge(
             return e.file_report(err, false, .{ "Failed to open import file: {s}", .{newfile_path} }, null);
         };
 
-        // if newfile is in stack, we build a cycle, throw error
-        // unwrapped since we currently peek into `file_stack` which guarantees atleast one elem
         for (file_stack.slice_view().?) |file| {
             if (file.handle != std.Io.File.stdin().handle) {
                 const stat_a = newfile.stat(io) catch |err| return crash(err);
@@ -144,10 +172,15 @@ fn walk_and_merge(
             }
         }
 
-        // push newfile on stack and "schreite den berg hinauf :D"
+        if (cmd == .deferimport) {
+            defer_stack.peek_addr().?.items.push(.{ .file = newfile, .path = newfile_path });
+            continue;
+        }
+
         const newfilebuf = filex.alloc_file_bytes(alloc, io, newfile);
         sbuf_stack.push(.init(newfilebuf));
         file_stack.push(newfile);
+        defer_stack.push(.{ .items = Stack(DeferredImport).init(alloc, 2) });
         depth += 1;
     }
 }

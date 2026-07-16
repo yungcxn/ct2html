@@ -5,6 +5,7 @@
 !blkdef:rainbow,<p style="color: red;">,</p>,<p style="color: green;">,</p>,<p style="color: blue;">,</p>
 !inldef:testcmd,escaped\,text    ,   and-none-\\escaped-text
 @import(0_correct/base_attr.ct)
+@deferimport(0_correct/defered.ct)
 
 # My title 
 
