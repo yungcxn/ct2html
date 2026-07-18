@@ -340,7 +340,7 @@ fn generic_parse_cmd_args(
             .l0 => p.l0nodes.push(Node.L0{
                 .kind = generic_cmd_data[i],
                 .span = .{ arg_start, arg_end },
-                .l1_containable = true,
+                .l1_containable = std.mem.endsWith(u8, @tagName(generic_cmd_data[i]), "_l1c"),
             }),
             .l1 => {
                 // we have a special l1 command: raw, which is not l1-containable
@@ -348,7 +348,7 @@ fn generic_parse_cmd_args(
                     .kind = generic_cmd_data[i],
                     .span = .{ arg_start, arg_end },
                     .margin = .{ left_margin, right_margin },
-                    .l1_containable = generic_cmd_data[i] != Node.L1Kind.inl_cmd_raw_text,
+                    .l1_containable = std.mem.endsWith(u8, @tagName(generic_cmd_data[i]), "_l1c"),
                 });
             },
             .custom_l0 => {

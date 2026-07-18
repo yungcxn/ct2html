@@ -133,7 +133,7 @@ pub const datatable = hack.StructByteMap(.{
         Rule.GenDef.def("style=\"width:", "; height: auto;\" alt=\"\" />", .direct),
     },
     .{
-        .{Node.L0Kind.blk_cmd_img_2caption},
+        .{Node.L0Kind.blk_cmd_img_2caption_l1c},
         Rule.GenDef.def("<figcaption>", "</figcaption></figure>", .all_esc),
     },
 
@@ -154,31 +154,31 @@ pub const datatable = hack.StructByteMap(.{
         Rule.GenDef.def("<script>", "</script>", .direct),
     },
     .{
-        .{Node.L0Kind.blk_cmd_ar_text},
+        .{Node.L0Kind.blk_cmd_ar_text_l1c},
         Rule.GenDef.def("<p dir=\"rtl\" lang=\"ar\">", "</p>", .direct),
     },
     .{
-        .{Node.L0Kind.blk_cmd_header_text},
+        .{Node.L0Kind.blk_cmd_header_text_l1c},
         Rule.GenDef.def("<header>", "</header>", .all_esc),
     },
     .{
-        .{Node.L0Kind.blk_cmd_footer_text},
+        .{Node.L0Kind.blk_cmd_footer_text_l1c},
         Rule.GenDef.def("<footer>", "</footer>", .all_esc),
     },
     .{
-        .{Node.L0Kind.blk_cmd_details_0summary},
+        .{Node.L0Kind.blk_cmd_details_0summary_l1c},
         Rule.GenDef.def("<details><summary>", "</summary>", .all_esc),
     },
     .{
-        .{Node.L0Kind.blk_cmd_details_1text},
+        .{Node.L0Kind.blk_cmd_details_1text_l1c},
         Rule.GenDef.def("", "</details>", .all_esc),
     },
     .{
-        .{Node.L0Kind.blk_cmd_info_0summary},
+        .{Node.L0Kind.blk_cmd_info_0summary_l1c},
         Rule.GenDef.def("<aside class=\"info\" data-title=\"", "\">", .all_esc),
     },
     .{
-        .{Node.L0Kind.blk_cmd_info_1text},
+        .{Node.L0Kind.blk_cmd_info_1text_l1c},
         Rule.GenDef.def("", "</aside>", .all_esc),
     },
     .{
@@ -234,11 +234,11 @@ pub const datatable = hack.StructByteMap(.{
         Rule.GenDef.def("<a href=\"", "\">", .direct),
     },
     .{
-        .{Node.L1Kind.inl_cmd_link_1displayname},
+        .{Node.L1Kind.inl_cmd_link_1displayname_l1c},
         Rule.GenDef.def("", "</a>", .all_esc),
     },
     .{
-        .{Node.L1Kind.inl_cmd_ar_text},
+        .{Node.L1Kind.inl_cmd_ar_text_l1c},
         Rule.GenDef.def("<span dir=\"rtl\" lang=\"ar\">", "</span>", .all_esc),
     },
     .{
@@ -246,7 +246,7 @@ pub const datatable = hack.StructByteMap(.{
         Rule.GenDef.def("<div class=\"", "\">", .direct),
     },
     .{
-        .{Node.L1Kind.inl_cmd_div_1text},
+        .{Node.L1Kind.inl_cmd_div_1text_l1c},
         Rule.GenDef.def("", "</div>", .all_esc),
     },
     .{
@@ -254,7 +254,7 @@ pub const datatable = hack.StructByteMap(.{
         Rule.GenDef.def("<span class=\"", "\">", .direct),
     },
     .{
-        .{Node.L1Kind.inl_cmd_span_1text},
+        .{Node.L1Kind.inl_cmd_span_1text_l1c},
         Rule.GenDef.def("", "</span>", .all_esc),
     },
     .{
@@ -262,7 +262,7 @@ pub const datatable = hack.StructByteMap(.{
         Rule.GenDef.def("<span style=\"color: ", "\">", .direct),
     },
     .{
-        .{Node.L1Kind.inl_cmd_color_1text},
+        .{Node.L1Kind.inl_cmd_color_1text_l1c},
         Rule.GenDef.def("", "</span>", .all_esc),
     },
     .{
@@ -270,7 +270,7 @@ pub const datatable = hack.StructByteMap(.{
         Rule.GenDef.def("<span style=\"font-size: ", "\">", .direct),
     },
     .{
-        .{Node.L1Kind.inl_cmd_fs_1text},
+        .{Node.L1Kind.inl_cmd_fs_1text_l1c},
         Rule.GenDef.def("", "</span>", .all_esc),
     },
     .{

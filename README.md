@@ -12,4 +12,4 @@ Pretty fast.
 zig build
 ```
 
-TODO: Docs
+# 

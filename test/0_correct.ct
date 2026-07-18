@@ -9,6 +9,8 @@
 
 # My title 
 
+@link(A_link, https://www.google.com) 
+
 This is a l1-in-l1-test: @green(This is a green block of text, with some *bold* in it.)
 
 @red: This is a red block of text, with some @green(this is green)-text.

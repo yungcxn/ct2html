@@ -80,12 +80,12 @@ pub const L0Kind = enum(u8) {
     // blockcommand section: @commandname: arg0, arg1, ...
     blk_cmd_img_0src,
     blk_cmd_img_1size,
-    blk_cmd_img_2caption,
+    blk_cmd_img_2caption_l1c,
 
-    blk_cmd_header_text,
-    blk_cmd_footer_text,
+    blk_cmd_header_text_l1c,
+    blk_cmd_footer_text_l1c,
 
-    blk_cmd_ar_text,
+    blk_cmd_ar_text_l1c,
 
     blk_cmd_style_link,
 
@@ -95,10 +95,10 @@ pub const L0Kind = enum(u8) {
 
     blk_cmd_scriptcode_code,
 
-    blk_cmd_details_0summary, // @details(<summary>, <text>)
-    blk_cmd_details_1text,
-    blk_cmd_info_0summary, // @info(<summary>, <text>)
-    blk_cmd_info_1text,
+    blk_cmd_details_0summary_l1c, // @details(<summary>, <text>)
+    blk_cmd_details_1text_l1c,
+    blk_cmd_info_0summary_l1c, // @info(<summary>, <text>)
+    blk_cmd_info_1text_l1c,
 
     blk_custom_cmd_arg, // uses `L0.custom_command_id_arg`
 
@@ -143,21 +143,21 @@ pub const L1Kind = enum(u8) {
     // - we do not push command node wrappers around args since they cost for nothing
     // - note: the `inl_cmd_` prefix is important since the `CommandEngine` parses commands out of them
     inl_cmd_link_0url,
-    inl_cmd_link_1displayname,
+    inl_cmd_link_1displayname_l1c,
 
     inl_cmd_color_0color,
-    inl_cmd_color_1text,
+    inl_cmd_color_1text_l1c,
 
     inl_cmd_div_0class,
-    inl_cmd_div_1text,
+    inl_cmd_div_1text_l1c,
 
     inl_cmd_span_0class,
-    inl_cmd_span_1text,
+    inl_cmd_span_1text_l1c,
 
-    inl_cmd_ar_text,
+    inl_cmd_ar_text_l1c,
 
     inl_cmd_fs_0size, // font-size
-    inl_cmd_fs_1text,
+    inl_cmd_fs_1text_l1c,
 
     inl_cmd_raw_text,
 
