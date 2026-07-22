@@ -19,19 +19,19 @@ pub const datatable = hack.StructByteMap(.{
 }).init();
 
 fn sidenote(p: *Parser, endat: usize) Parser.ParsingError!usize {
-    return generic_capture(p, endat, .{.sidenote}, 2);
+    return generic_capture(p, endat, .{.sidenote}, 2, true);
 }
 
 fn inline_code(p: *Parser, endat: usize) Parser.ParsingError!usize {
-    return generic_capture(p, endat, .{.inline_code}, 1);
+    return generic_capture(p, endat, .{.inline_code}, 1, false);
 }
 
 fn bold_and_sons(p: *Parser, endat: usize) Parser.ParsingError!usize {
-    return generic_capture(p, endat, .{ .bold, .italic, .bold_italic }, 1);
+    return generic_capture(p, endat, .{ .bold, .italic, .bold_italic }, 1, true);
 }
 
 fn strikethrough_and_sons(p: *Parser, endat: usize) Parser.ParsingError!usize {
-    return generic_capture(p, endat, .{ .strikethrough, .strikethrough_bold, .strikethrough_italic, .strikethrough_bold_italic }, 1);
+    return generic_capture(p, endat, .{ .strikethrough, .strikethrough_bold, .strikethrough_italic, .strikethrough_bold_italic }, 1, true);
 }
 
 inline fn generic_capture(
@@ -39,6 +39,7 @@ inline fn generic_capture(
     endat: usize,
     node_levels: anytype,
     level0_for: usize,
+    l1_containable: bool,
 ) Parser.ParsingError!usize {
     // to get cursor back to the first char on trigger
     p.dec();
@@ -107,6 +108,7 @@ inline fn generic_capture(
         .kind = level.?,
         .span = .{ text_start, text_start + chars_in_capture },
         .margin = .{ capturec, capturec2 }, // both same len
+        .l1_containable = l1_containable,
     });
 
     // we return on cursor being +1 of the second capture, which is correct,

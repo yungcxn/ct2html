@@ -133,7 +133,7 @@ fn heading(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFinalSt
         return p.e.file_report(L0SyntaxError, true, "Newline in heading", kind);
     }
 
-    p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat }, .l1_containable = false });
+    p.l0nodes.push(.{ .kind = kind, .span = .{ p.cursor, endat }, .l1_containable = true });
     return .success;
 }
 

@@ -331,10 +331,14 @@ fn pre_sidenote(g: *Generator, node: *anyopaque) Generator.GenError!?@Vector(2, 
 
     g.print_direct("<label for=\"sn-");
     g.print_direct(sidenote_count_str);
-    g.print_direct("\" class=\"margin-toggle sidenote-number\">");
+    g.print_direct("\" class=\"margin-toggle sidenote-number\" data-sidenote-count=\"");
+    g.print_direct(sidenote_count_str);
+    g.print_direct("\">");
     g.print_direct("</label><input type=\"checkbox\" id=\"sn-");
     g.print_direct(sidenote_count_str);
-    g.print_direct("\" class=\"margin-toggle\"><span class=\"sidenote\"><span style=\"font-size: 0;\"> (</span>");
+    g.print_direct("\" class=\"margin-toggle\"><span class=\"sidenote\" data-sidenote-count=\"");
+    g.print_direct(sidenote_count_str);
+    g.print_direct("\"><span style=\"font-size: 0;\"> (</span>");
 
     return span;
 }
