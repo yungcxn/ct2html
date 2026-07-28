@@ -1,7 +1,6 @@
 const std = @import("std");
 const hack = @import("../hack.zig");
 
-// TODO: unify L0 and L1
 pub const L0 = struct {
     kind: L0Kind,
     span: ?@Vector(2, usize) = null,
@@ -130,7 +129,7 @@ pub const L1Kind = enum(u8) {
 
     strikethrough_bold_italic,
 
-    abbreviation, // TODO! with custom trigger letter
+    abbreviation, // TODO! with custom trigger letter for pre processor
 
     // since we need to encode the count of all sidenotes before this, and this cound gets embedded
     //   into the tag more than once, simple <pre>...<post> syntax is not feasible. Because of this,
