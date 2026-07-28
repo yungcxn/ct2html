@@ -15,6 +15,7 @@ const throw = ErrorReporter.throw;
 const webserver = @import("webserver.zig");
 const Attributor = @import("internal/Attributor.zig");
 const CCEngine = @import("internal/CCEngine.zig");
+const DynBuf = @import("ds/dynbuf.zig").DynBuf;
 
 // these errors get thrown through the reporting system of `ErrorReporter`
 
@@ -125,7 +126,7 @@ pub fn main(init: std.process.Init) void {
     defer cache.deinit();
 
     if (args.webservermode) {
-        webserver.run(alloc_response, alloc, io, cwd, &cache);
+        webserver.run(gen_response, alloc, io, cwd, &cache);
     } else {
         if (!std.mem.eql(u8, args.in, "stdin") and !std.mem.endsWith(u8, args.in, ".ct")) {
             std.log.err("Input file must have .ct extension", .{});
@@ -153,22 +154,27 @@ pub fn main(init: std.process.Init) void {
             const opt_cachecontent = cache.try_owned_cacheload(in_file, args.in);
             if (opt_cachecontent) |cachecontent| {
                 std.log.info("Cache hit for: {s}", .{args.in});
-                out_file.writeStreamingAll(io, cachecontent) catch return crash(error.OOM);
-                alloc.free(cachecontent);
+
+                out_file.writeStreamingAll(
+                    io,
+                    cachecontent.slice_view(),
+                ) catch return crash(error.OOM);
+
+                cachecontent.deinit();
                 print_elapsed(io, start, "Cached run took: {} ms");
                 return;
             }
         }
 
-        const outbuf, const run_err = run(alloc, io, cwd, in_file, args.htmlerror, args.responsemode, args.debug);
-        defer alloc.free(outbuf);
+        const outdynbuf, const run_err = run(alloc, io, cwd, in_file, args.htmlerror, args.responsemode, args.debug);
+        defer outdynbuf.deinit();
 
         if (run_err == null and in_file.handle != std.Io.File.stdin().handle) {
-            cache.force_store(outbuf, args.in);
+            cache.force_store(outdynbuf, args.in);
             std.log.info("Stored cache for: {s}", .{args.in});
         }
 
-        out_file.writeStreamingAll(io, outbuf) catch return crash(error.OOM);
+        out_file.writeStreamingAll(io, outdynbuf.slice_view()) catch return crash(error.OOM);
         print_elapsed(io, start, "Full run took: {} ms");
     }
 }
@@ -182,7 +188,7 @@ pub fn run(
     htmlerror: bool,
     responsemode: bool,
     debug: bool,
-) struct { []const u8, ?RunError } {
+) struct { *DynBuf(u8), ?RunError } {
     var error_reporter = ErrorReporter.init(alloc, io, htmlerror, responsemode);
     defer error_reporter.deinit();
 
@@ -262,22 +268,22 @@ pub fn run(
     );
 
     // `Generator` only allocates the buffer behind `outbuf`
-    const outbuf = generator.generate_out() catch |err| if (error_reporter.err_reported) {
+    const outdynbuf = generator.generate_out() catch |err| if (error_reporter.err_reported) {
         return .{ error_reporter.outbuf.to_owned_slice(), err };
     } else {
         crash(error.ThrowWithoutReport);
     };
 
-    return .{ outbuf, null };
+    return .{ outdynbuf, null };
 }
 
-fn alloc_response(
+fn gen_response(
     alloc: std.mem.Allocator,
     io: std.Io,
     cwd: std.Io.Dir,
     path: []const u8,
     cache: *filex.Cache,
-) error{FileNotFound}![]const u8 {
+) error{FileNotFound}!*DynBuf(u8) {
     const start = std.Io.Clock.now(.awake, io);
 
     std.log.info("requested: {s}", .{path});
@@ -291,17 +297,17 @@ fn alloc_response(
     const in_file = filex.open(io, cwd, path2) catch return error.FileNotFound;
     defer in_file.close(io);
 
-    if (cache.try_owned_cacheload(in_file, path2)) |buf| {
+    if (cache.try_owned_cacheload(in_file, path2)) |dynbuf| {
         std.log.info("Cache hit for: {s}", .{path2});
         print_elapsed(io, start, "Cached run took: {} ms");
-        return buf;
+        return dynbuf;
     } else {
-        const out, const run_err = run(alloc, io, cwd, in_file, true, false, false);
+        const outdynbuf, const run_err = run(alloc, io, cwd, in_file, true, false, false);
         if (run_err == null) {
-            cache.force_store(out, path2);
+            cache.force_store(outdynbuf, path2);
             std.log.info("Stored cache for: {s}", .{path2});
         }
         print_elapsed(io, start, "Full run took: {} ms");
-        return out;
+        return outdynbuf;
     }
 }

@@ -40,7 +40,7 @@ pub const Cache = struct {
         self: *@This(),
         file: std.Io.File,
         realpath: []const u8,
-    ) ?[]const u8 {
+    ) ?DynBuf(u8) {
         const abspathbuf = std.fs.path.join(self.alloc, &.{ self.abscwd_path, realpath }) catch |e| crash(e);
         defer self.alloc.free(abspathbuf);
 
@@ -58,7 +58,7 @@ pub const Cache = struct {
         }
 
         // under the 2 assumptions of 1. being not `new` and 2. being newer than the cached file...
-        return alloc_file_bytes(self.alloc, self.io, cachefile);
+        return DynBuf(u8).init_proxied(alloc_file_bytes(self.alloc, self.io, cachefile));
     }
 
     pub fn force_store(self: *@This(), towrite: []const u8, realpath: []const u8) void {

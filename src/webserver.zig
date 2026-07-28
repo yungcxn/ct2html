@@ -4,6 +4,7 @@ const Io = std.Io;
 const net = std.Io.net;
 const http = std.http;
 const crash = @import("ErrorReporter.zig").crash;
+const DynBuf = @import("ds/DynBuf.zig").DynBuf;
 
 const headers = [_]http.Header{
     .{ .name = "Content-Type", .value = "text/html; charset=UTF-8" },
@@ -20,7 +21,7 @@ const Responder = fn (
     cwd: std.Io.Dir,
     path: []const u8,
     cache: *filex.Cache,
-) error{FileNotFound}![]const u8;
+) error{FileNotFound}!*DynBuf(u8);
 
 pub fn run(
     comptime responder: Responder,
@@ -39,7 +40,13 @@ pub fn run(
 
 fn Dispatcher(comptime responder: Responder) type {
     return struct {
-        pub fn start(alloc: std.mem.Allocator, io: std.Io, server: *std.Io.net.Server, cwd: std.Io.Dir, cache: *filex.Cache) void {
+        pub fn start(
+            alloc: std.mem.Allocator,
+            io: std.Io,
+            server: *std.Io.net.Server,
+            cwd: std.Io.Dir,
+            cache: *filex.Cache,
+        ) void {
             var group: std.Io.Group = .init;
             defer group.cancel(io);
 
@@ -55,7 +62,13 @@ fn Dispatcher(comptime responder: Responder) type {
             }
         }
 
-        fn handle_conn(io: Io, alloc: std.mem.Allocator, cwd: std.Io.Dir, stream: net.Stream, cache: *filex.Cache) void {
+        fn handle_conn(
+            io: Io,
+            alloc: std.mem.Allocator,
+            cwd: std.Io.Dir,
+            stream: net.Stream,
+            cache: *filex.Cache,
+        ) void {
             defer stream.close(io);
 
             var read_buf: [8 * 1024]u8 = undefined;
@@ -96,7 +109,7 @@ fn Dispatcher(comptime responder: Responder) type {
             }
 
             const path = req.head.target;
-            const response_body = responder(alloc, io, cwd, path, cache) catch |err| switch (err) {
+            const resp_body = responder(alloc, io, cwd, path, cache) catch |err| switch (err) {
                 error.FileNotFound => {
                     try req.respond(
                         "File not found",
@@ -105,9 +118,9 @@ fn Dispatcher(comptime responder: Responder) type {
                     return;
                 },
             };
-            defer alloc.free(response_body);
+            defer resp_body.deinit();
 
-            try req.respond(response_body, .{ .status = .ok, .extra_headers = &headers });
+            try req.respond(resp_body.slice_view(), .{ .status = .ok, .extra_headers = &headers });
         }
     };
 }

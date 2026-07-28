@@ -144,7 +144,7 @@ pub inline fn print_all_esc(self: *@This(), text: []const u8) void {
 }
 
 // TODO beautify out by indenting
-pub fn generate_out(self: *@This()) GenError![]const u8 {
+pub fn generate_out(self: *@This()) GenError!*DynBuf(u8) {
     errdefer self.outbuf.deinit();
     if (self.responsemode) {
         self.outbuf.append("Content-Type: text/html; charset=UTF-8\r\n\r\n");
@@ -266,5 +266,5 @@ pub fn generate_out(self: *@This()) GenError![]const u8 {
         }
     }
 
-    return self.outbuf.to_owned_slice();
+    return &self.outbuf;
 }

@@ -17,6 +17,16 @@ pub fn DynBuf(T: type) type {
             };
         }
 
+        // whenever a DynBuf must be returned on some borrowed data which is not to be modified
+        pub fn init_proxied(proxied_buf: []T) DynBuf(T) {
+            return DynBuf(T){
+                .alloc = std.heap.page_allocator,
+                .buf = proxied_buf,
+                .cap = proxied_buf.len,
+                .head = proxied_buf.len - 1,
+            };
+        }
+
         pub fn deinit(self: *DynBuf(T)) void {
             self.alloc.free(self.buf orelse return);
         }
