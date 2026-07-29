@@ -1,0 +1,12 @@
+{
+  "configurations": [
+    {
+      "name": "dbg ct2html",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/ct2html",
+      "args": ["-i", "0_correct.ct", "-c", "test/", "-d"],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

@@ -112,9 +112,10 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
     );
 
     const l0_apply_state = try l0_ri.parse(self, blockend);
+    var preserve_cursor: bool = l0_ri.preserve_cursor;
 
     switch (l0_apply_state) {
-        .transitioned => {
+        .par_fallback => {
             // we pushed to head-1 the p node, and not yet l1 nodes
             // so if we had a l0_begin pushed node, we must replace it
             // by the p node and reset cursor by -1
@@ -123,13 +124,14 @@ fn parse_l0nodes_from_block(self: *@This(), blockend: usize) Parser.ParsingError
                 self.l0nodes.buf.?[self.l0nodes.head - 2] = last_pnode;
                 self.l0nodes.head -= 1;
             }
+            preserve_cursor = false;
         },
         .success => if (l0_ri.post_node) |kind| {
             self.l0nodes.push(.{ .kind = kind, .span = null, .l1_containable = false });
         },
     }
 
-    return l0_ri.preserve_cursor;
+    return preserve_cursor;
 }
 
 // assume cursor is at the start of the block, and blockend is the end of the block

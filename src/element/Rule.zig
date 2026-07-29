@@ -16,7 +16,7 @@ pub const L0Def = struct {
 
     pub const ApplyFinalState = enum(u8) {
         success,
-        transitioned,
+        par_fallback,
     };
 
     pub fn def(comptime parse: anytype, comptime pre_node: ?Node.L0Kind, comptime post_node: ?Node.L0Kind, comptime preserve_cursor: bool) L0Def {

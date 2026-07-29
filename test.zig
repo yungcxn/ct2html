@@ -10,7 +10,7 @@ fn test_for_file(filepath: []const u8) main.RunError!void {
 
     const in_file = filex.open(std.testing.io, cwd, filepath) catch crash("file open error");
 
-    const text, const opterr = main.run(
+    const dynbuf, const opterr = main.run(
         std.heap.smp_allocator,
         std.testing.io,
         cwd,
@@ -21,7 +21,7 @@ fn test_for_file(filepath: []const u8) main.RunError!void {
     );
 
     if (opterr) |err| {
-        std.log.info("{s}", .{text});
+        std.log.info("{s}", .{dynbuf.slice_view()});
         return err;
     }
 }

@@ -83,7 +83,7 @@ pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule
         // just do a par out of this, since it could be a usual @command() at the start of a par
         p.cursor = start;
         _ = par(p, endat) catch |err| return err;
-        return .transitioned;
+        return .par_fallback;
     }
 
     const blkcmd_name_start = p.cursor;
@@ -92,7 +92,7 @@ pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule
         // same as above
         p.cursor = start;
         _ = par(p, endat) catch |err| return err;
-        return .transitioned;
+        return .par_fallback;
     };
 
     const blkcmd_name_end = p.cursor;
@@ -101,7 +101,7 @@ pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule
     if (!p.bounds_freeof(blkcmd_name_start, blkcmd_name_end, '(')) {
         p.cursor = start;
         _ = par(p, endat) catch |err| return err;
-        return .transitioned;
+        return .par_fallback;
     }
 
     // it is quiet sure that this is now a blockcommand,
@@ -115,7 +115,7 @@ pub fn l0_parse_block_command(p: *Parser, endat: usize) Parser.ParsingError!Rule
         //   a colon, therefore we fall back to `par` gain
         p.cursor = start;
         _ = par(p, endat) catch |err| return err;
-        return .transitioned;
+        return .par_fallback;
     }
 
     // cursor is at ':'...

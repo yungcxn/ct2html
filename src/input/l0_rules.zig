@@ -151,7 +151,7 @@ fn code_block(p: *Parser, endat: usize) Parser.ParsingError!Rule.L0Def.ApplyFina
     if (backtick0_c == 1) { // the fallback that was mentioned above
         p.cursor = at_start;
         _ = par(p, endat) catch |err| return err;
-        return .transitioned;
+        return .par_fallback;
     } else if (backtick0_c != 3) {
         return p.e.file_report(L0SyntaxError, true, "Code block must start with 3 backticks", null);
     }
