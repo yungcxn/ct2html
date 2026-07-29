@@ -29,7 +29,7 @@ textin: []const u8, // borrowed from parser
 l0nodes: DynBuf(Node.L0),
 l1nodes: DynBuf(Node.L1),
 
-outbuf: DynBuf(u8),
+outbuf: *DynBuf(u8),
 
 // generation specific variables
 sidenote_count: usize = 0,
@@ -61,7 +61,7 @@ pub fn init(
         .l1nodes = l1nodes,
         .htmlerror = htmlerror,
         .responsemode = responsemode,
-        .outbuf = DynBuf(u8).init(alloc, textin.len * 2),
+        .outbuf = DynBuf(u8).alloc_init(alloc, textin.len * 2),
     };
 }
 
@@ -145,7 +145,7 @@ pub inline fn print_all_esc(self: *@This(), text: []const u8) void {
 
 // TODO beautify out by indenting
 pub fn generate_out(self: *@This()) GenError!*DynBuf(u8) {
-    errdefer self.outbuf.deinit();
+    errdefer self.outbuf.destroy();
     if (self.responsemode) {
         self.outbuf.append("Content-Type: text/html; charset=UTF-8\r\n\r\n");
     }
@@ -159,7 +159,7 @@ pub fn generate_out(self: *@This()) GenError!*DynBuf(u8) {
         span_end: usize,
     };
 
-    var stack = Stack(Frame).init(self.l1nodes.alloc, 8);
+    var stack = Stack(Frame).init(self.alloc, 8);
     defer stack.deinit();
 
     for (self.l0nodes.slice_view()) |l0node| {
@@ -266,5 +266,5 @@ pub fn generate_out(self: *@This()) GenError!*DynBuf(u8) {
         }
     }
 
-    return &self.outbuf;
+    return self.outbuf;
 }

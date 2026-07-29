@@ -4,7 +4,7 @@ const Io = std.Io;
 const net = std.Io.net;
 const http = std.http;
 const crash = @import("ErrorReporter.zig").crash;
-const DynBuf = @import("ds/DynBuf.zig").DynBuf;
+const DynBuf = @import("ds/dynbuf.zig").DynBuf;
 
 const headers = [_]http.Header{
     .{ .name = "Content-Type", .value = "text/html; charset=UTF-8" },
@@ -118,7 +118,7 @@ fn Dispatcher(comptime responder: Responder) type {
                     return;
                 },
             };
-            defer resp_body.deinit();
+            defer resp_body.destroy();
 
             try req.respond(resp_body.slice_view(), .{ .status = .ok, .extra_headers = &headers });
         }

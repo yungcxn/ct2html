@@ -24,7 +24,7 @@ pub fn preprocess(
     e: *ErrorReporter,
     cwd: std.Io.Dir,
     file0: std.Io.File,
-) FileWalkError![]const u8 {
+) FileWalkError!*DynBuf(u8) {
     var fbytes: []u8 = undefined;
     if (file0.handle == std.Io.File.stdin().handle) {
         fbytes = filex.alloc_stdin_bytes(alloc, io, file0);
@@ -32,12 +32,12 @@ pub fn preprocess(
         fbytes = filex.alloc_file_bytes(alloc, io, file0);
     }
     defer alloc.free(fbytes);
-    var dynbuf = DynBuf(u8).init(alloc, fbytes.len * 2);
-    errdefer dynbuf.deinit();
+    var dynbuf = DynBuf(u8).alloc_init(alloc, fbytes.len * 2);
+    errdefer dynbuf.destroy();
 
-    try walk_and_merge(alloc, io, e, &dynbuf, cwd, file0, fbytes);
+    try walk_and_merge(alloc, io, e, dynbuf, cwd, file0, fbytes);
 
-    return dynbuf.to_owned_slice();
+    return dynbuf;
 }
 
 pub const FileWalkError = error{

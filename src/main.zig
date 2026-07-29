@@ -160,17 +160,17 @@ pub fn main(init: std.process.Init) void {
                     cachecontent.slice_view(),
                 ) catch return crash(error.OOM);
 
-                cachecontent.deinit();
+                cachecontent.destroy();
                 print_elapsed(io, start, "Cached run took: {} ms");
                 return;
             }
         }
 
         const outdynbuf, const run_err = run(alloc, io, cwd, in_file, args.htmlerror, args.responsemode, args.debug);
-        defer outdynbuf.deinit();
+        defer outdynbuf.destroy();
 
         if (run_err == null and in_file.handle != std.Io.File.stdin().handle) {
-            cache.force_store(outdynbuf, args.in);
+            cache.force_store(outdynbuf.slice_view(), args.in);
             std.log.info("Stored cache for: {s}", .{args.in});
         }
 
@@ -192,8 +192,7 @@ pub fn run(
     var error_reporter = ErrorReporter.init(alloc, io, htmlerror, responsemode);
     defer error_reporter.deinit();
 
-    // this allocates the preprocessed text []const u8
-    const preprocessed_text: []const u8 = Preprocessor.preprocess(
+    const preprocessed_text: *DynBuf(u8) = Preprocessor.preprocess(
         alloc,
         io,
         &error_reporter,
@@ -201,16 +200,16 @@ pub fn run(
         in_file,
     ) catch |err| {
         if (error_reporter.err_reported) {
-            return .{ error_reporter.outbuf.to_owned_slice(), err };
+            return .{ error_reporter.outbuf.alloc_copy(), err };
         } else {
             crash(error.ThrowWithoutReport);
         }
     };
-    defer alloc.free(preprocessed_text);
+    defer preprocessed_text.destroy();
 
-    if (debug) std.log.debug("[[PREPROCESSOR DEBUG]]:\n{s}\n", .{preprocessed_text});
+    if (debug) std.log.debug("[[PREPROCESSOR DEBUG]]:\n{s}\n", .{preprocessed_text.slice_view()});
 
-    var custom_cmd_engine = CCEngine.init(alloc, &error_reporter, preprocessed_text);
+    var custom_cmd_engine = CCEngine.init(alloc, &error_reporter, preprocessed_text.slice_view());
     defer custom_cmd_engine.deinit();
 
     var attributor = Attributor.init(alloc, &custom_cmd_engine);
@@ -224,7 +223,7 @@ pub fn run(
         &error_reporter,
         &attributor,
         &custom_cmd_engine,
-        preprocessed_text,
+        preprocessed_text.slice_view(),
         htmlerror,
     );
     defer parser.deinit();
@@ -232,7 +231,7 @@ pub fn run(
     error_reporter.set_parser(&parser);
 
     parser.build_nodes() catch |err| if (error_reporter.err_reported) {
-        return .{ error_reporter.outbuf.to_owned_slice(), err };
+        return .{ error_reporter.outbuf.alloc_copy(), err };
     } else {
         crash(error.ThrowWithoutReport);
     };
@@ -260,7 +259,7 @@ pub fn run(
         &error_reporter,
         &attributor,
         &custom_cmd_engine,
-        preprocessed_text,
+        preprocessed_text.slice_view(),
         parser.l0nodes,
         parser.l1nodes,
         htmlerror,
@@ -269,7 +268,7 @@ pub fn run(
 
     // `Generator` only allocates the buffer behind `outbuf`
     const outdynbuf = generator.generate_out() catch |err| if (error_reporter.err_reported) {
-        return .{ error_reporter.outbuf.to_owned_slice(), err };
+        return .{ error_reporter.outbuf.alloc_copy(), err };
     } else {
         crash(error.ThrowWithoutReport);
     };
@@ -304,7 +303,7 @@ fn gen_response(
     } else {
         const outdynbuf, const run_err = run(alloc, io, cwd, in_file, true, false, false);
         if (run_err == null) {
-            cache.force_store(outdynbuf, path2);
+            cache.force_store(outdynbuf.slice_view(), path2);
             std.log.info("Stored cache for: {s}", .{path2});
         }
         print_elapsed(io, start, "Full run took: {} ms");
