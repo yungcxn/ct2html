@@ -9,8 +9,6 @@
 
 # My title 
 
-@link(A_link, https://www.google.com) 
-
 This is a l1-in-l1-test: @green(This is a green block of text, with some *bold* in it.)
 
 `my_code` and some more text.
@@ -128,5 +126,23 @@ Here I want @link(https://www.google.com, https://www.google.com) without a name
 Here is some @raw(<div>raw html</div>) and some @raw(<span>inline raw html</span>).
 
 @img:img, 100%, good
+
+## Var test
+
+$myvar=This is a test of the variable;
+
+@link(A_link, https://www.google.com) 
+
+$myvar;
+
+$var2=Use $myvar;;
+
+$var3=Use $var2;, and $myvar; and some additional text;
+$var3;
+$var2=Nix;
+$var3;
+$var3=;
+Nix
+$var3;
 
 The end!

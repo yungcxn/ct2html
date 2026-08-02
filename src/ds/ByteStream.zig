@@ -31,3 +31,17 @@ pub fn take_exc(self: *@This(), delim: u8) ?[]const u8 {
     }
     return null;
 }
+
+pub fn take_any_exc(self: *@This(), delims: []const u8) ?struct { u8, []const u8 } {
+    const start = self.cursor;
+    while (self.cursor < self.buf.len) : (self.cursor += 1) {
+        for (delims) |d| {
+            if (self.buf[self.cursor] == d) {
+                const result = self.buf[start..self.cursor];
+                self.cursor += 1; // skip delim
+                return .{ d, result };
+            }
+        }
+    }
+    return null;
+}

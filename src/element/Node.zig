@@ -111,8 +111,6 @@ pub const L0Kind = enum(u8) {
     blkdef, // this and his brother below get used by `CommandEngine`
     inldef,
 
-    abbreviation_def, // TODO! like env vars with $
-
     end,
 };
 
@@ -128,8 +126,6 @@ pub const L1Kind = enum(u8) {
     strikethrough_italic,
 
     strikethrough_bold_italic,
-
-    abbreviation, // TODO! with custom trigger letter for pre processor
 
     // since we need to encode the count of all sidenotes before this, and this cound gets embedded
     //   into the tag more than once, simple <pre>...<post> syntax is not feasible. Because of this,
